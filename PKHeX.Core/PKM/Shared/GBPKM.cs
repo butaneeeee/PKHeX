@@ -106,15 +106,16 @@ public abstract class GBPKM : PKM
     public sealed override int Nature { get => 0; set { } }
     public sealed override bool ChecksumValid => true;
     public sealed override bool FatefulEncounter { get => false; set { } }
-    public sealed override int TSV => 0x0000;
-    public sealed override int PSV => 0xFFFF;
+    public sealed override uint TSV => 0x0000;
+    public sealed override uint PSV => 0xFFFF;
     public sealed override int Characteristic => -1;
     public sealed override int MarkValue { get => 0; set { } }
     public sealed override int Ability { get => -1; set { } }
     public sealed override int CurrentHandler { get => 0; set { } }
     public sealed override int Egg_Location { get => 0; set { } }
     public sealed override int Ball { get => 0; set { } }
-    public sealed override int SID { get => 0; set { } }
+    public sealed override uint ID32 { get => TID16; set => TID16 = (ushort)value; }
+    public sealed override ushort SID16 { get => 0; set { } }
     #endregion
 
     public sealed override bool IsShiny => IV_DEF == 10 && IV_SPE == 10 && IV_SPC == 10 && (IV_ATK & 2) == 2;
@@ -202,7 +203,7 @@ public abstract class GBPKM : PKM
 
     public override void LoadStats(IBaseStat p, Span<ushort> stats)
     {
-        var lv = Stat_Level;
+        var lv = CurrentLevel; // recalculate instead of checking Stat_Level
         stats[0] = (ushort)(GetStat(p.HP, IV_HP, EV_HP, lv) + (5 + lv)); // HP
         stats[1] = GetStat(p.ATK, IV_ATK, EV_ATK, lv);
         stats[2] = GetStat(p.DEF, IV_DEF, EV_DEF, lv);

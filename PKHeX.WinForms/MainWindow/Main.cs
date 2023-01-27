@@ -6,7 +6,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Media;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -22,8 +21,6 @@ namespace PKHeX.WinForms;
 
 public partial class Main : Form
 {
-    private static readonly Version CurrentProgramVersion = Assembly.GetExecutingAssembly().GetName().Version!;
-
     public Main()
     {
         string[] args = Environment.GetCommandLineArgs();
@@ -96,7 +93,7 @@ public partial class Main : Form
 
     #region Path Variables
 
-    public static readonly string WorkingDirectory = Application.StartupPath;
+    public static readonly string WorkingDirectory = Path.GetDirectoryName(Environment.ProcessPath)!;
     public static readonly string DatabasePath = Path.Combine(WorkingDirectory, "pkmdb");
     public static readonly string MGDatabasePath = Path.Combine(WorkingDirectory, "mgdb");
     public static readonly string ConfigPath = Path.Combine(WorkingDirectory, "cfg.json");
@@ -133,11 +130,7 @@ public partial class Main : Form
                 return true;
         }
 
-#if !NET6_0_OR_GREATER
-        var path = Process.GetCurrentProcess().MainModule!.FileName!;
-#else
         var path = Environment.ProcessPath!;
-#endif
         return Path.GetFileNameWithoutExtension(path).EndsWith(nameof(HaX));
     }
 
@@ -186,7 +179,8 @@ public partial class Main : Form
         var sav = SaveUtil.GetBlankSAV(ver, tr, lang);
         if (sav.Version == GameVersion.Invalid) // will fail to load
         {
-            ver = (GameVersion)GameInfo.VersionDataSource.Max(z => z.Value);
+            var max = GameInfo.VersionDataSource.MaxBy(z => z.Value) ?? throw new Exception();
+            ver = (GameVersion)max.Value;
             sav = SaveUtil.GetBlankSAV(ver, tr, lang);
         }
         OpenSAV(sav, string.Empty);
@@ -205,7 +199,7 @@ public partial class Main : Form
                 Debug.WriteLine($"Exception while checking for latest version: {ex}");
                 return;
             }
-            if (latestVersion is null || latestVersion <= CurrentProgramVersion)
+            if (latestVersion is null || latestVersion <= Program.CurrentVersion)
                 return;
 
             while (!IsHandleCreated) // Wait for form to be ready
@@ -231,9 +225,9 @@ public partial class Main : Form
         if (Settings.Startup.Version.Length > 0 && Settings.Startup.ShowChangelogOnUpdate) // already run on system
         {
             bool parsed = Version.TryParse(Settings.Startup.Version, out var lastrev);
-            showChangelog = parsed && lastrev < CurrentProgramVersion;
+            showChangelog = parsed && lastrev < Program.CurrentVersion;
         }
-        Settings.Startup.Version = CurrentProgramVersion.ToString(); // set current ver so this doesn't happen until the user updates next time
+        Settings.Startup.Version = Program.CurrentVersion.ToString(); // set current ver so this doesn't happen until the user updates next time
 
         // BAK Prompt
         if (!Settings.Backup.BAKPrompt)
@@ -275,7 +269,7 @@ public partial class Main : Form
             return;
         }
         foreach (var p in Plugins.OrderBy(z => z.Priority))
-            p.Initialize(C_SAV, PKME_Tabs, menuStrip1, CurrentProgramVersion);
+            p.Initialize(C_SAV, PKME_Tabs, menuStrip1, Program.CurrentVersion);
     }
 
     // Main Menu Strip UI Functions
@@ -807,11 +801,12 @@ public partial class Main : Form
     private static string GetProgramTitle()
     {
 #if DEBUG
-        var date = File.GetLastWriteTime(Assembly.GetEntryAssembly()!.Location);
+        // Get the file path that started this exe.
+        var date = File.GetLastWriteTime(Environment.ProcessPath!);
         string version = $"d-{date:yyyyMMdd}";
 #else
-            var ver = CurrentProgramVersion;
-            string version = $"{2000+ver.Major:00}{ver.Minor:00}{ver.Build:00}";
+        var ver = Program.CurrentVersion;
+        string version = $"{2000+ver.Major:00}{ver.Minor:00}{ver.Build:00}";
 #endif
         return $"PKH{(HaX ? "a" : "e")}X ({version})";
     }
@@ -1090,7 +1085,9 @@ public partial class Main : Form
     {
         pk ??= PreparePKM(false); // don't perform control loss click
 
-        dragout.ContextMenuStrip.Enabled = pk.Species != 0 || HaX; // Species
+        var menu = dragout.ContextMenuStrip;
+        if (menu != null)
+            menu.Enabled = pk.Species != 0 || HaX; // Species
 
         pb.Image = pk.Sprite(C_SAV.SAV, -1, -1, flagIllegal: false);
         if (pb.BackColor == SlotUtil.BadDataColor)
@@ -1160,7 +1157,7 @@ public partial class Main : Form
         var newfile = FileUtil.GetPKMTempFileName(pk, encrypt);
         try
         {
-            File.WriteAllBytes(newfile, data);
+            await File.WriteAllBytesAsync(newfile, data).ConfigureAwait(true);
 
             var pb = (PictureBox)sender;
             if (pb.Image is Bitmap img)
@@ -1213,7 +1210,7 @@ public partial class Main : Form
         Cursor = DefaultCursor;
     }
 
-    private void Main_FormClosing(object sender, FormClosingEventArgs e)
+    private async void Main_FormClosing(object sender, FormClosingEventArgs e)
     {
         if (C_SAV.SAV.State.Edited || PKME_Tabs.PKMIsUnsaved)
         {
@@ -1225,7 +1222,7 @@ public partial class Main : Form
             }
         }
 
-        PKHeXSettings.SaveSettings(ConfigPath, Settings);
+        await PKHeXSettings.SaveSettings(ConfigPath, Settings).ConfigureAwait(false);
     }
 
     #endregion

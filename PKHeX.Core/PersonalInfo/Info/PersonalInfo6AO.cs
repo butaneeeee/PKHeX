@@ -6,12 +6,10 @@ namespace PKHeX.Core;
 /// <summary>
 /// <see cref="PersonalInfo"/> class with values from the OR &amp; AS games.
 /// </summary>
-public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
+public sealed class PersonalInfo6AO(byte[] Data) : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
 {
     public const int SIZE = 0x50;
-    private readonly byte[] Data;
 
-    public PersonalInfo6AO(byte[] data) => Data = data;
     public override byte[] Write() => Data;
 
     public override int HP { get => Data[0x00]; set => Data[0x00] = (byte)value; }
@@ -22,7 +20,7 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
     public override int SPD { get => Data[0x05]; set => Data[0x05] = (byte)value; }
     public override byte Type1 { get => Data[0x06]; set => Data[0x06] = value; }
     public override byte Type2 { get => Data[0x07]; set => Data[0x07] = value; }
-    public override int CatchRate { get => Data[0x08]; set => Data[0x08] = (byte)value; }
+    public override byte CatchRate { get => Data[0x08]; set => Data[0x08] = value; }
     public override int EvoStage { get => Data[0x09]; set => Data[0x09] = (byte)value; }
     private int EVYield { get => ReadUInt16LittleEndian(Data.AsSpan(0x0A)); set => WriteUInt16LittleEndian(Data.AsSpan(0x0A), (ushort)value); }
     public override int EV_HP { get => (EVYield >> 0) & 0x3; set => EVYield = (EVYield & ~(0x3 << 0)) | ((value & 0x3) << 0); }
@@ -111,8 +109,7 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     public void SetIsLearnTutorType(int index, bool value)
     {
-        if ((uint)index >= TypeTutorCount)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, TypeTutorCount);
         if (value)
             Data[TypeTutor + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -136,7 +133,7 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     private const int CountTutor1 = 15;
     private const int CountTutor2 = 17;
-    private const int CountTutor3 = 13;
+    private const int CountTutor3 = 16;
     private const int CountTutor4 = 15;
 
     public bool GetIsTutor1(int index)
@@ -148,14 +145,13 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     public bool GetIsTutor1(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves1, move);
+        var index = TutorMoves1.IndexOf(move);
         return index >= 0 && (Data[Tutor1 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor1(int index, bool value)
     {
-        if ((uint)index >= CountTutor1)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor1);
         if (value)
             Data[Tutor1 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -171,14 +167,13 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     public bool GetIsLearnTutor2(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves2, move);
+        var index = TutorMoves2.IndexOf(move);
         return index >= 0 && (Data[Tutor2 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor2(int index, bool value)
     {
-        if ((uint)index >= CountTutor2)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor2);
         if (value)
             Data[Tutor2 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -194,14 +189,13 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     public bool GetIsLearnTutor3(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves3, move);
+        var index = TutorMoves3.IndexOf(move);
         return index >= 0 && (Data[Tutor3 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor3(int index, bool value)
     {
-        if ((uint)index >= CountTutor3)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor3);
         if (value)
             Data[Tutor3 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -217,14 +211,13 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
 
     public bool GetIsLearnTutor4(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves4, move);
+        var index = TutorMoves4.IndexOf(move);
         return index >= 0 && (Data[Tutor4 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor4(int index, bool value)
     {
-        if ((uint)index >= CountTutor4)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor4);
         if (value)
             Data[Tutor4 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -275,10 +268,10 @@ public sealed class PersonalInfo6AO : PersonalInfo, IPersonalAbility12H, IPerson
         }
     }
 
-    private static readonly ushort[] TutorMoves1 = { 450, 343, 162, 530, 324, 442, 402, 529, 340, 067, 441, 253, 009, 007, 008 };
-    private static readonly ushort[] TutorMoves2 = { 277, 335, 414, 492, 356, 393, 334, 387, 276, 527, 196, 401, 399, 428, 406, 304, 231 };
-    private static readonly ushort[] TutorMoves3 = { 020, 173, 282, 235, 257, 272, 215, 366, 143, 220, 202, 409, 355, 264, 351, 352 }; // Last 3 added, Different from G5 Humilau
-    private static readonly ushort[] TutorMoves4 = { 380, 388, 180, 495, 270, 271, 478, 472, 283, 200, 278, 289, 446, 214, 285 };
+    private static ReadOnlySpan<ushort> TutorMoves1 => [ 450, 343, 162, 530, 324, 442, 402, 529, 340, 067, 441, 253, 009, 007, 008 ];
+    private static ReadOnlySpan<ushort> TutorMoves2 => [ 277, 335, 414, 492, 356, 393, 334, 387, 276, 527, 196, 401, 399, 428, 406, 304, 231 ];
+    private static ReadOnlySpan<ushort> TutorMoves3 => [ 020, 173, 282, 235, 257, 272, 215, 366, 143, 220, 202, 409, 355, 264, 351, 352 ]; // Last 3 added, Different from Gen5 Humilau
+    private static ReadOnlySpan<ushort> TutorMoves4 => [ 380, 388, 180, 495, 270, 271, 478, 472, 283, 200, 278, 289, 446, 214, 285 ];
 
     public bool GetIsTutorSpecial(ushort move)
     {

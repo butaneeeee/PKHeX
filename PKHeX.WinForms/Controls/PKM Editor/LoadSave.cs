@@ -38,7 +38,7 @@ public partial class PKMEditor
     {
         pk.Species = (ushort)WinFormsUtil.GetIndex(CB_Species);
         pk.EXP = Util.ToUInt32(TB_EXP.Text);
-        pk.Stat_Level = Util.ToInt32(TB_Level.Text);
+        pk.Stat_Level = Math.Max(1, Util.ToInt32(TB_Level.Text));
     }
 
     private void LoadOT(PKM pk)
@@ -56,9 +56,13 @@ public partial class PKMEditor
 
     private void LoadPKRS(PKM pk)
     {
-        Label_PKRS.Visible = CB_PKRSStrain.Visible = CHK_Infected.Checked = Label_PKRSdays.Visible = CB_PKRSDays.Visible = pk.PKRS_Infected;
+        var infected = pk.PKRS_Infected;
+        var cured = pk.PKRS_Cured;
+        CHK_Infected.Checked = Label_PKRS.Visible = CB_PKRSStrain.Visible = infected;
+        Label_PKRSdays.Visible = CB_PKRSDays.Visible = !cured && infected;
+        CHK_Cured.Checked = cured;
+        ChangePKRSstrainDropDownLists(CB_PKRSStrain.SelectedIndex, pk.PKRS_Strain, 0);
         LoadClamp(CB_PKRSStrain, pk.PKRS_Strain);
-        CHK_Cured.Checked = pk.PKRS_Cured;
         LoadClamp(CB_PKRSDays, pk.PKRS_Days); // clamp to valid day values for the current strain
     }
 
@@ -197,7 +201,7 @@ public partial class PKMEditor
         CHK_IsEgg.Checked = pk.IsEgg;
         CB_HeldItem.SelectedValue = pk.HeldItem;
         LoadClamp(CB_Form, pk.Form);
-        L_FormArgument.Visible = pk is IFormArgument f && FA_Form.LoadArgument(f, pk.Species, pk.Form, pk.Format);
+        L_FormArgument.Visible = pk is IFormArgument f && FA_Form.LoadArgument(f, pk.Species, pk.Form, pk.Context);
 
         ReloadToFriendshipTextBox(pk);
 
@@ -366,11 +370,15 @@ public partial class PKMEditor
 
         TB_HT.Text = handler;
         UC_HTGender.Gender = gender;
-        bool hasValue = handler.Length != 0;
-        L_CurrentHandler.Visible = CB_Handler.Visible = UC_HTGender.Visible = hasValue;
+        ToggleHandlerVisibility(handler.Length != 0);
 
         // Indicate who is currently in possession of the PKM
         UpadteHandlingTrainerBackground(pk.CurrentHandler);
+    }
+
+    private void ToggleHandlerVisibility(bool hasValue)
+    {
+        L_CurrentHandler.Visible = CB_Handler.Visible = UC_HTGender.Visible = hasValue;
     }
 
     private void UpadteHandlingTrainerBackground(int handler)

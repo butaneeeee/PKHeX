@@ -13,7 +13,7 @@ public sealed class LearnSource1RB : ILearnSource<PersonalInfo1>
 {
     public static readonly LearnSource1RB Instance = new();
     private static readonly PersonalTable1 Personal = PersonalTable.RB;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpRB;
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(Util.GetBinaryResource("lvlmove_rb.pkl"), Legal.MaxSpeciesID_1);
     private const LearnEnvironment Game = RB;
     private const int MaxSpecies = Legal.MaxSpeciesID_1;
 
@@ -45,7 +45,7 @@ public sealed class LearnSource1RB : ILearnSource<PersonalInfo1>
         {
             var learn = Learnsets[evo.Species];
             var level = learn.GetLevelLearnMove(move);
-            if (level != -1 && evo.LevelMin <= level && level <= evo.LevelMax)
+            if (level != -1 && evo.InsideLevelRange(level))
                 return new(LevelUp, Game, (byte)level);
         }
 
@@ -55,7 +55,7 @@ public sealed class LearnSource1RB : ILearnSource<PersonalInfo1>
     private static bool GetIsTutor(ushort species, byte move)
     {
         // No special tutors besides Stadium, which is GB-era only.
-        if (!ParseSettings.AllowGBCartEra)
+        if (!ParseSettings.AllowGBStadium2)
             return false;
 
         // Surf Pikachu via Stadium
@@ -81,13 +81,9 @@ public sealed class LearnSource1RB : ILearnSource<PersonalInfo1>
         {
             var learn = Learnsets[evo.Species];
             var min = ParseSettings.AllowGen1Tradeback && ParseSettings.AllowGen2MoveReminder(pk) ? 1 : evo.LevelMin;
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(evo.LevelMax, min);
-            if (hasMoves)
-            {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                    result[moves[i]] = true;
-            }
+            var span = learn.GetMoveRange(evo.LevelMax, min);
+            foreach (var move in span)
+                result[move] = true;
         }
 
         if (types.HasFlag(MoveSourceType.Machine))
@@ -100,15 +96,14 @@ public sealed class LearnSource1RB : ILearnSource<PersonalInfo1>
         }
     }
 
-    public void GetEncounterMoves(IEncounterTemplate enc, Span<ushort> init)
+    public void SetEncounterMoves(ushort species, byte form, int level, Span<ushort> init)
     {
-        var species = enc.Species;
         if (!TryGetPersonal(species, 0, out var personal))
             return;
 
         var learn = Learnsets[species];
         personal.GetMoves(init);
-        var start = (4 - init.Count<ushort>(0)) & 3;
-        learn.SetEncounterMoves(enc.LevelMin, init, start);
+        var start = (init.LastIndexOfAnyExcept<ushort>(0) + 1) & 3;
+        learn.SetEncounterMoves(level, init, start);
     }
 }

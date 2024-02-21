@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using PKHeX.Core;
-
-using static PKHeX.Core.LegalityCheckStrings;
 
 namespace PKHeX.WinForms.Controls;
 
@@ -11,6 +12,9 @@ public sealed class SummaryPreviewer
 {
     private readonly ToolTip ShowSet = new() { InitialDelay = 200, IsBalloon = false, AutoPopDelay = 32_767 };
     private readonly CryPlayer Cry = new();
+    private readonly PokePreview Previewer = new();
+    private CancellationTokenSource _source = new();
+    private static HoverSettings Settings => Main.Settings.Hover;
 
     public void Show(Control pb, PKM pk)
     {
@@ -20,17 +24,29 @@ public sealed class SummaryPreviewer
             return;
         }
 
-        if (Main.Settings.Hover.HoverSlotShowText)
-        {
-            var text = ShowdownParsing.GetLocalizedPreviewText(pk, Main.Settings.Startup.Language);
-            var la = new LegalityAnalysis(pk);
-            var result = new List<string> { text, string.Empty };
-            LegalityFormatting.AddEncounterInfo(la, result);
-            ShowSet.SetToolTip(pb, string.Join(Environment.NewLine, result));
-        }
-
-        if (Main.Settings.Hover.HoverSlotPlayCry)
+        if (Settings.HoverSlotShowPreview && Control.ModifierKeys != Keys.Alt)
+            UpdatePreview(pb, pk);
+        else if (Settings.HoverSlotShowText)
+            ShowSet.SetToolTip(pb, GetPreviewText(pk, new LegalityAnalysis(pk)));
+        if (Settings.HoverSlotPlayCry)
             Cry.PlayCry(pk, pk.Context);
+    }
+
+    private void UpdatePreview(Control pb, PKM pk)
+    {
+        _source.Cancel();
+        _source = new();
+        UpdatePreviewPosition(new());
+        Previewer.Populate(pk);
+        Previewer.Show();
+    }
+
+    public void UpdatePreviewPosition(Point location)
+    {
+        var cLoc = Cursor.Position;
+        var shift = Settings.PreviewCursorShift;
+        cLoc.Offset(shift);
+        Previewer.Location = cLoc;
     }
 
     public void Show(Control pb, IEncounterInfo enc)
@@ -41,63 +57,42 @@ public sealed class SummaryPreviewer
             return;
         }
 
-        if (Main.Settings.Hover.HoverSlotShowText)
-        {
-            var lines = GetTextLines(enc);
-            var text = string.Join(Environment.NewLine, lines);
-            ShowSet.SetToolTip(pb, text);
-        }
-
-        if (Main.Settings.Hover.HoverSlotPlayCry)
+        if (Settings.HoverSlotShowText)
+            ShowSet.SetToolTip(pb, GetPreviewText(enc));
+        if (Settings.HoverSlotPlayCry)
             Cry.PlayCry(enc, enc.Context);
-    }
-
-    public static IEnumerable<string> GetTextLines(IEncounterInfo enc)
-    {
-        var lines = new List<string>();
-        var str = GameInfo.Strings.Species;
-        var name = (uint) enc.Species < str.Count ? str[enc.Species] : enc.Species.ToString();
-        var EncounterName = $"{(enc is IEncounterable ie ? ie.LongName : "Special")} ({name})";
-        lines.Add(string.Format(L_FEncounterType_0, EncounterName));
-        if (enc is MysteryGift mg)
-        {
-            lines.AddRange(mg.GetDescription());
-        }
-        else if (enc is IMoveset m)
-        {
-            var moves = m.Moves;
-            if (moves.HasMoves)
-            {
-                string result = moves.GetMovesetLine(GameInfo.Strings.movelist);
-                lines.Add(result);
-            }
-        }
-
-        var el = enc as ILocation;
-        var loc = el?.GetEncounterLocation(enc.Generation, (int) enc.Version);
-        if (!string.IsNullOrEmpty(loc))
-            lines.Add(string.Format(L_F0_1, "Location", loc));
-        lines.Add(string.Format(L_F0_1, nameof(GameVersion), enc.Version));
-        lines.Add(enc.LevelMin == enc.LevelMax
-            ? $"Level: {enc.LevelMin}"
-            : $"Level: {enc.LevelMin}-{enc.LevelMax}");
-
-#if DEBUG
-        // Record types! Can get a nice summary.
-        // Won't work neatly for Mystery Gift types since those aren't record types.
-        if (enc is not MysteryGift)
-        {
-            // ReSharper disable once ConstantNullCoalescingCondition
-            var raw = enc.ToString() ?? throw new ArgumentNullException(nameof(enc));
-            lines.AddRange(raw.Split(',', '}', '{'));
-        }
-#endif
-        return lines;
     }
 
     public void Clear()
     {
+        var src = _source;
+        Task.Run(async () =>
+        {
+            if (!Previewer.IsHandleCreated)
+                return; // not shown ever
+
+            // Give a little bit of fade-out delay
+            await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
+            if (!src.IsCancellationRequested)
+                Previewer.Invoke(Previewer.Hide);
+        }, src.Token);
         ShowSet.RemoveAll();
         Cry.Stop();
+    }
+
+    public static string GetPreviewText(PKM pk, LegalityAnalysis la)
+    {
+        var text = ShowdownParsing.GetLocalizedPreviewText(pk, Main.Settings.Startup.Language);
+        if (!Main.Settings.Hover.HoverSlotShowEncounter)
+            return text;
+        var result = new List<string> { text, string.Empty };
+        LegalityFormatting.AddEncounterInfo(la, result);
+        return string.Join(Environment.NewLine, result);
+    }
+
+    private static string GetPreviewText(IEncounterInfo enc)
+    {
+        var lines = enc.GetTextLines(GameInfo.Strings);
+        return string.Join(Environment.NewLine, lines);
     }
 }

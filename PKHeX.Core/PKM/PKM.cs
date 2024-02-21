@@ -21,13 +21,13 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     public abstract int SIZE_STORED { get; }
     public string Extension => GetType().Name.ToLowerInvariant();
     public abstract PersonalInfo PersonalInfo { get; }
-    public virtual IReadOnlyList<ushort> ExtraBytes => Array.Empty<ushort>();
+    public virtual ReadOnlySpan<ushort> ExtraBytes => [];
 
     // Internal Attributes set on creation
     public readonly byte[] Data; // Raw Storage
 
     protected PKM(byte[] data) => Data = data;
-    protected PKM(int size) => Data = new byte[size];
+    protected PKM([ConstantExpected] int size) => Data = new byte[size];
 
     public virtual byte[] EncryptedPartyData => Encrypt().AsSpan(0, SIZE_PARTY).ToArray();
     public virtual byte[] EncryptedBoxData => Encrypt().AsSpan(0, SIZE_STORED).ToArray();
@@ -42,7 +42,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     // Trash Bytes
     public abstract Span<byte> Nickname_Trash { get; }
     public abstract Span<byte> OT_Trash { get; }
-    public virtual Span<byte> HT_Trash => Span<byte>.Empty;
+    public virtual Span<byte> HT_Trash => [];
 
     protected abstract byte[] Encrypt();
     public abstract EntityContext Context { get; }
@@ -131,7 +131,6 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     public abstract uint TSV { get; }
     public abstract uint PSV { get; }
     public abstract int Characteristic { get; }
-    public abstract int MarkValue { get; set; }
     public abstract int Met_Location { get; set; }
     public abstract int Egg_Location { get; set; }
     public abstract int OT_Friendship { get; set; }
@@ -282,7 +281,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     public bool SWSH => Version is (int)SW or (int)SH;
     public virtual bool BDSP => Version is (int)BD or (int)SP;
     public virtual bool LA => Version is (int)PLA;
-    public bool SV => Version is (int)SL or (int)VL;
+    public virtual bool SV => Version is (int)SL or (int)VL;
 
     public bool GO_LGPE => GO && Met_Location == Locations.GO7;
     public bool GO_HOME => GO && Met_Location == Locations.GO8;
@@ -318,7 +317,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         }
     }
 
-    public bool PKRS_Infected { get => PKRS_Strain != 0; set => PKRS_Strain = value ? Math.Max(PKRS_Strain, 1) : 0; }
+    public bool PKRS_Infected { get => PKRS_Days != 0 || PKRS_Strain != 0; set => PKRS_Strain = value ? Math.Max(PKRS_Strain, 1) : 0; }
 
     public bool PKRS_Cured
     {
@@ -357,10 +356,14 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
 
     public int[] IVs
     {
-        get => new[] { IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD };
+        get => [IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD];
         set => SetIVs(value);
     }
 
+    /// <summary>
+    /// Retrieves the IVs of the PKM in the order HP, ATK, DEF, SPE, SPA, SPD
+    /// </summary>
+    /// <param name="value">Span of length 6 to write the IVs to</param>
     public void GetIVs(Span<int> value)
     {
         if (value.Length != 6)
@@ -373,6 +376,10 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         value[5] = IV_SPD;
     }
 
+    /// <summary>
+    /// Sets the IVs of the PKM in the order HP, ATK, DEF, SPE, SPA, SPD
+    /// </summary>
+    /// <param name="value">Span of length 6 to read the IVs from</param>
     public void SetIVs(ReadOnlySpan<int> value)
     {
         if (value.Length != 6)
@@ -385,6 +392,10 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         IV_SPD = value[5];
     }
 
+    /// <summary>
+    /// Retrieves the EVs of the PKM in the order HP, ATK, DEF, SPE, SPA, SPD
+    /// </summary>
+    /// <param name="value">Span of length 6 to write the EVs to</param>
     public void GetEVs(Span<int> value)
     {
         if (value.Length != 6)
@@ -397,6 +408,10 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         value[5] = EV_SPD;
     }
 
+    /// <summary>
+    /// Sets the EVs of the PKM in the order HP, ATK, DEF, SPE, SPA, SPD
+    /// </summary>
+    /// <param name="value">Span of length 6 to read the EVs from</param>
     public void SetEVs(ReadOnlySpan<int> value)
     {
         if (value.Length != 6)
@@ -411,7 +426,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
 
     public int[] Stats
     {
-        get => new[] { Stat_HPCurrent, Stat_ATK, Stat_DEF, Stat_SPE, Stat_SPA, Stat_SPD };
+        get => [Stat_HPCurrent, Stat_ATK, Stat_DEF, Stat_SPE, Stat_SPA, Stat_SPD];
         set
         {
             if (value.Length != 6)
@@ -423,20 +438,25 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
 
     public ushort[] Moves
     {
-        get => new[] { Move1, Move2, Move3, Move4 };
+        get => [Move1, Move2, Move3, Move4];
         set => SetMoves(value);
     }
 
-    public void PushMove(ushort move)
+    public bool AddMove(ushort move, bool pushOut = true)
     {
         if (move == 0 || move >= MaxMoveID || HasMove(move))
-            return;
+            return false;
 
         var ct = MoveCount;
         if (ct == 4)
+        {
+            if (!pushOut)
+                return false;
             ct = 0;
+        }
         SetMove(ct, move);
         HealPPIndex(ct);
+        return true;
     }
 
     public int MoveCount => Convert.ToInt32(Move1 != 0) + Convert.ToInt32(Move2 != 0) + Convert.ToInt32(Move3 != 0) + Convert.ToInt32(Move4 != 0);
@@ -455,6 +475,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         Move2 = value.Move2;
         Move3 = value.Move3;
         Move4 = value.Move4;
+        this.SetMaximumPPCurrent(value);
     }
 
     public void SetMoves(ReadOnlySpan<ushort> value)
@@ -463,11 +484,12 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         Move2 = value.Length > 1 ? value[1] : default;
         Move3 = value.Length > 2 ? value[2] : default;
         Move4 = value.Length > 3 ? value[3] : default;
+        this.SetMaximumPPCurrent(value);
     }
 
     public ushort[] RelearnMoves
     {
-        get => new[] { RelearnMove1, RelearnMove2, RelearnMove3, RelearnMove4 };
+        get => [RelearnMove1, RelearnMove2, RelearnMove3, RelearnMove4];
         set => SetRelearnMoves(value);
     }
 
@@ -479,12 +501,12 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         RelearnMove4 = value.Move4;
     }
 
-    public void SetRelearnMoves(IReadOnlyList<ushort> value)
+    public void SetRelearnMoves(ReadOnlySpan<ushort> value)
     {
-        RelearnMove1 = value.Count > 0 ? value[0] : default;
-        RelearnMove2 = value.Count > 1 ? value[1] : default;
-        RelearnMove3 = value.Count > 2 ? value[2] : default;
-        RelearnMove4 = value.Count > 3 ? value[3] : default;
+        RelearnMove1 = value.Length > 0 ? value[0] : default;
+        RelearnMove2 = value.Length > 1 ? value[1] : default;
+        RelearnMove3 = value.Length > 2 ? value[2] : default;
+        RelearnMove4 = value.Length > 3 ? value[3] : default;
     }
 
     public int PIDAbility
@@ -499,10 +521,6 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
             return (int)((Gen5 ? PID >> 16 : PID) & 1);
         }
     }
-
-    public abstract int MarkingCount { get; }
-    public abstract int GetMarking(int index);
-    public abstract void SetMarking(int index, int value);
 
     private int HPBitValPower => ((IV_HP & 2) >> 1) | ((IV_ATK & 2) >> 0) | ((IV_DEF & 2) << 1) | ((IV_SPE & 2) << 2) | ((IV_SPA & 2) << 3) | ((IV_SPD & 2) << 4);
     public virtual int HPPower => Format < 6 ? ((40 * HPBitValPower) / 63) + 30 : 60;
@@ -592,26 +610,39 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     /// </summary>
     private void ReorderMoves()
     {
-        if (Move1 == 0 && Move2 != 0)
+        // Loop to catch multiple empty slots. X2X4 needs 3 shifts, XX34 needs 4.
+        while (true)
         {
-            Move1 = Move2;
-            Move1_PP = Move2_PP;
-            Move1_PPUps = Move2_PPUps;
-            Move2 = 0;
-        }
-        if (Move2 == 0 && Move3 != 0)
-        {
-            Move2 = Move3;
-            Move2_PP = Move3_PP;
-            Move2_PPUps = Move3_PPUps;
-            Move3 = 0;
-        }
-        if (Move3 == 0 && Move4 != 0)
-        {
-            Move3 = Move4;
-            Move3_PP = Move4_PP;
-            Move3_PPUps = Move4_PPUps;
-            Move4 = 0;
+            if (Move1 == 0 && Move2 != 0)
+            {
+                // This branch can only be true once, as Move1 is the top move.
+                Move1 = Move2;
+                Move1_PP = Move2_PP;
+                Move1_PPUps = Move2_PPUps;
+                Move2 = 0;
+            }
+            else if (Move2 == 0 && Move3 != 0)
+            {
+                // This branch can be true more than once, if shifting 3 & 4 down into 1 & 2.
+                Move2 = Move3;
+                Move2_PP = Move3_PP;
+                Move2_PPUps = Move3_PPUps;
+                Move3 = 0;
+            }
+            else if (Move3 == 0 && Move4 != 0)
+            {
+                // This branch can be true only once, as Move4 is the lowest move and nothing can refill it.
+                Move3 = Move4;
+                Move3_PP = Move4_PP;
+                Move3_PPUps = Move4_PPUps;
+                Move4 = 0;
+                // Still need to loop as Move 3 may still have empty slots before it.
+            }
+            else
+            {
+                // No more reordering, current moveset has no empty slots exist before nonzero slots.
+                return;
+            }
         }
     }
 
@@ -622,7 +653,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     public virtual void RefreshAbility(int n)
     {
         AbilityNumber = 1 << n;
-        IPersonalAbility pi = PersonalInfo;
+        var pi = PersonalInfo;
         if ((uint)n < pi.AbilityCount)
             Ability = pi.GetAbilityAtIndex(n);
     }
@@ -630,14 +661,11 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     /// <summary>
     /// Gets the IV Judge Rating value.
     /// </summary>
-    /// <remarks>IV Judge scales his response 0 (worst) to 3 (best).</remarks>
-    public int PotentialRating => IVTotal switch
-    {
-        <=  90 => 0,
-        <= 120 => 1,
-        <= 150 => 2,
-        _      => 3,
-    };
+    /// <remarks>
+    /// IV Judge scales his response 0 (worst) to 3 (best).<br/>
+    /// Assumes IVs are in the 0-31 range, so this isn't really useful for Gen1/2 formats that are 0-15 per IV.
+    /// </remarks>
+    public int PotentialRating => PowerPotential.GetPotential(IVTotal);
 
     /// <summary>
     /// Gets the current Battle Stats.
@@ -659,7 +687,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         else
             LoadStats(stats, p, level);
 
-        // Account for nature
+        // Amplify stats based on the stat nature.
         NatureAmp.ModifyStatsForNature(stats, StatNature);
     }
 
@@ -757,7 +785,7 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     /// </summary>
     /// <param name="valid">Items that the <see cref="PKM"/> can hold.</param>
     /// <returns>True/False if the <see cref="PKM"/> can hold its <see cref="HeldItem"/>.</returns>
-    public virtual bool CanHoldItem(IReadOnlyList<ushort> valid) => valid.Contains((ushort)HeldItem);
+    public virtual bool CanHoldItem(ReadOnlySpan<ushort> valid) => valid.Contains((ushort)HeldItem);
 
     /// <summary>
     /// Deep clones the <see cref="PKM"/> object. The clone will not have any shared resources with the source.
@@ -880,16 +908,33 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     }
 
     /// <inheritdoc cref="SetRandomIVs(Span{int},int)"/>
-    public void SetRandomIVs(int minFlawless = -1) => SetRandomIVs(stackalloc int[6], minFlawless);
+    public void SetRandomIVs(int minFlawless = 0) => SetRandomIVs(stackalloc int[6], minFlawless);
+
+    /// <inheritdoc cref="SetRandomIVs(Span{int},int)"/>
+    public void SetRandomIVs(in IndividualValueSet template) => SetRandomIVs(stackalloc int[6], template);
+
+    /// <inheritdoc cref="SetRandomIVs(Span{int},int)"/>
+    public void SetRandomIVs(Span<int> ivs, in IndividualValueSet template)
+    {
+        var rnd = Util.Rand;
+        for (int i = 0; i < ivs.Length; i++)
+        {
+            if (template[i] == -1)
+                ivs[i] = rnd.Next(MaxIV + 1);
+            else
+                ivs[i] = template[i];
+        }
+        SetIVs(ivs);
+    }
 
     /// <summary>
     /// Randomizes the IVs within game constraints.
     /// </summary>
     /// <param name="ivs">Temporary variable storage</param>
     /// <param name="minFlawless">Count of flawless IVs to set. If none provided, a count will be detected.</param>
-    public void SetRandomIVs(Span<int> ivs, int minFlawless = -1)
+    public void SetRandomIVs(Span<int> ivs, int minFlawless = 0)
     {
-        if (Version == (int)GameVersion.GO && minFlawless != 6)
+        if (Version == (int)GameVersion.GO)
         {
             SetRandomIVsGO(ivs);
             return;
@@ -899,12 +944,11 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         for (int i = 0; i < 6; i++)
             ivs[i] = rnd.Next(MaxIV + 1);
 
-        int count = minFlawless == -1 ? GetFlawlessIVCount() : minFlawless;
-        if (count != 0)
+        if (minFlawless != 0)
         {
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < minFlawless; i++)
                 ivs[i] = MaxIV;
-            Util.Shuffle(ivs, 0, ivs.Length, rnd); // Randomize IV order
+            rnd.Shuffle(ivs); // Randomize IV order
         }
         SetIVs(ivs);
     }
@@ -920,59 +964,6 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
         ivs[2] = ivs[5] = (rnd.Next(minIV, maxIV + 1) << 1) | 1; // defense
         ivs[3] = rnd.Next(MaxIV + 1); // speed
         SetIVs(ivs);
-    }
-
-    /// <summary>
-    /// Randomizes the IVs within game constraints.
-    /// </summary>
-    /// <param name="template">IV template to generate from</param>
-    /// <param name="minFlawless">Count of flawless IVs to set. If none provided, a count will be detected.</param>
-    /// <returns>Randomized IVs if desired.</returns>
-    public void SetRandomIVsTemplate(IndividualValueSet template, int minFlawless = -1)
-    {
-        int count = minFlawless == -1 ? GetFlawlessIVCount() : minFlawless;
-        Span<int> ivs = stackalloc int[6];
-        var rnd = Util.Rand;
-        do
-        {
-            for (int i = 0; i < 6; i++)
-                ivs[i] = template[i] < 0 ? rnd.Next(MaxIV + 1) : template[i];
-        } while (ivs.Count(MaxIV) < count);
-
-        SetIVs(ivs);
-    }
-
-    /// <summary>
-    /// Gets the amount of flawless IVs that the <see cref="PKM"/> should have.
-    /// </summary>
-    /// <returns>Count of IVs that should be max.</returns>
-    public int GetFlawlessIVCount()
-    {
-        int gen = Generation;
-        if (gen >= 6)
-        {
-            var species = Species;
-            if (Legal.Mythicals.Contains(species))
-                return 3;
-            if (Legal.Legends.Contains(species))
-                return 3;
-            if (Legal.SubLegends.Contains(species))
-                return 3;
-            if (gen <= 7 && Legal.IsUltraBeast(species))
-                return 3;
-        }
-        if (XY)
-        {
-            if (PersonalInfo.EggGroup1 == 15) // Undiscovered
-                return 3;
-            if (Met_Location == 148 && Met_Level == 30) // Friend Safari
-                return 2;
-        }
-        if (VC)
-            return Species is (int)Core.Species.Mew or (int)Core.Species.Celebi ? 5 : 3;
-        if (this is IAlpha {IsAlpha: true})
-            return 3;
-        return 0;
     }
 
     /// <summary>
@@ -1076,6 +1067,10 @@ public abstract class PKM : ISpeciesForm, ITrainerID32, IGeneration, IShiny, ILa
     /// </summary>
     public bool HasRelearnMove(ushort move) => RelearnMove1 == move || RelearnMove2 == move || RelearnMove3 == move || RelearnMove4 == move;
 
+    /// <summary>
+    /// Loads the Relearn moves into the <see cref="value"/> array.
+    /// </summary>
+    /// <param name="value">Span to load the relearn moves into.</param>
     public void GetRelearnMoves(Span<ushort> value)
     {
         value[3] = RelearnMove4;

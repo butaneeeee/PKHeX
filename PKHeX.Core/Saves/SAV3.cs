@@ -60,6 +60,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         int end = start + SIZE_MAIN;
         for (int ofs = start; ofs < end; ofs += SIZE_SECTOR)
         {
+            // Get the sector ID for the serialized savedata block, and copy the chunk into the corresponding object.
             var id = ReadInt16LittleEndian(data[(ofs + 0xFF4)..]);
             switch (id)
             {
@@ -76,6 +77,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         int end = start + SIZE_MAIN;
         for (int ofs = start; ofs < end; ofs += SIZE_SECTOR)
         {
+            // Get the sector ID for the serialized savedata block, and copy the corresponding chunk of object data into it.
             var id = ReadInt16LittleEndian(data[(ofs + 0xFF4)..]);
             switch (id)
             {
@@ -97,7 +99,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         System.Diagnostics.Debug.Assert(slot is 0 or 1);
         int start = SIZE_MAIN * slot;
         int end = start + SIZE_MAIN;
-        int bitTrack = 0;
+        int bitTrack = 0; // bit flags for each sector, 1 if present
         sector0 = 0;
         for (int ofs = start; ofs < end; ofs += SIZE_SECTOR)
         {
@@ -113,8 +115,8 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
 
     private static int GetActiveSlot(ReadOnlySpan<byte> data)
     {
-        if (data.Length == SaveUtil.SIZE_G3RAWHALF)
-            return 0;
+        if (data.Length == SaveUtil.SIZE_G3RAWHALF) // misconfigured emulator FLASH size
+            return 0; // not enough data for a secondary save
 
         var v0 = IsAllMainSectorsPresent(data, 0, out var sectorZero0);
         var v1 = IsAllMainSectorsPresent(data, 1, out var sectorZero1);
@@ -123,10 +125,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         if (!v1)
             return 0;
 
-        var count0 = ReadUInt32LittleEndian(data[(sectorZero0 + 0x0FFC)..]);
-        var count1 = ReadUInt32LittleEndian(data[(sectorZero1 + 0x0FFC)..]);
-        // don't care about 32bit overflow. a 10 second save would take 1,000 years to overflow!
-        return count1 > count0 ? 1 : 0;
+        return SAV3BlockDetection.CompareFooters(data, sectorZero0, sectorZero1);
     }
 
     protected sealed override byte[] GetFinalData()
@@ -161,7 +160,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
     public sealed override ushort MaxMoveID => Legal.MaxMoveID_3;
     public sealed override ushort MaxSpeciesID => Legal.MaxSpeciesID_3;
     public sealed override int MaxAbilityID => Legal.MaxAbilityID_3;
-    public sealed override int MaxItemID => Legal.MaxItemID_3;
+    public override int MaxItemID => Legal.MaxItemID_3;
     public sealed override int MaxBallID => Legal.MaxBallID_3;
     public sealed override int MaxGameID => Legal.MaxGameID_3;
 
@@ -183,10 +182,10 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         _ => throw new ArgumentOutOfRangeException(nameof(version)),
     };
 
-    public sealed override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_RS;
+    public sealed override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_RS;
 
     public sealed override int BoxCount => 14;
-    public sealed override int MaxEV => 255;
+    public sealed override int MaxEV => EffortValues.Max255;
     public sealed override int Generation => 3;
     public sealed override EntityContext Context => EntityContext.Gen3;
     protected sealed override int GiftCountMax => 1;
@@ -200,8 +199,8 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
     protected sealed override PK3 GetPKM(byte[] data) => new(data);
     protected sealed override byte[] DecryptPKM(byte[] data) => PokeCrypto.DecryptArray3(data);
 
-    protected sealed override byte[] BoxBuffer => Storage;
-    protected sealed override byte[] PartyBuffer => Large;
+    protected sealed override Span<byte> BoxBuffer => Storage;
+    protected sealed override Span<byte> PartyBuffer => Large;
 
     private const int COUNT_BOX = 14;
     private const int COUNT_SLOTSPERBOX = 30;
@@ -227,16 +226,8 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
             return;
 
         // Hall of Fame Checksums
-        {
-            var sector2 = Data.AsSpan(0x1C000, SIZE_SECTOR);
-            ushort chk = Checksums.CheckSum32(sector2[..SIZE_SECTOR_USED]);
-            WriteUInt16LittleEndian(sector2[0xFF4..], chk);
-        }
-        {
-            var sector2 = Data.AsSpan(0x1D000, SIZE_SECTOR);
-            ushort chk = Checksums.CheckSum32(sector2[..SIZE_SECTOR_USED]);
-            WriteUInt16LittleEndian(sector2[0xFF4..], chk);
-        }
+        SetSectoryValidExtra(0x1C000);
+        SetSectoryValidExtra(0x1D000);
     }
 
     public sealed override bool ChecksumsValid
@@ -260,11 +251,19 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         }
     }
 
-    private bool IsSectorValidExtra(int ofs)
+    private void SetSectoryValidExtra(int offset)
     {
-        var sector = Data.AsSpan(ofs, SIZE_SECTOR);
-        ushort chk = Checksums.CheckSum32(sector[..SIZE_SECTOR_USED]);
-        return chk == ReadUInt16LittleEndian(sector[0xFF4..]);
+        var sector = Data.AsSpan(offset, SIZE_SECTOR);
+        var expect = Checksums.CheckSum32(sector[..SIZE_SECTOR_USED]);
+        WriteUInt16LittleEndian(sector[0xFF4..], expect);
+    }
+
+    private bool IsSectorValidExtra(int offset)
+    {
+        var sector = Data.AsSpan(offset, SIZE_SECTOR);
+        var expect = Checksums.CheckSum32(sector[..SIZE_SECTOR_USED]);
+        var actual = ReadUInt16LittleEndian(sector[0xFF4..]);
+        return expect == actual;
     }
 
     private bool IsSectorValid(int sectorIndex)
@@ -272,8 +271,9 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
         int start = ActiveSlot * SIZE_MAIN;
         int ofs = start + (sectorIndex * SIZE_SECTOR);
         var sector = Data.AsSpan(ofs, SIZE_SECTOR);
-        ushort chk = Checksums.CheckSum32(sector[..SIZE_SECTOR_USED]);
-        return chk == ReadUInt16LittleEndian(sector[0xFF6..]);
+        var expect = Checksums.CheckSum32(sector[..SIZE_SECTOR_USED]);
+        var actual = ReadUInt16LittleEndian(sector[0xFF6..]);
+        return expect == actual;
     }
 
     public sealed override string ChecksumInfo
@@ -296,6 +296,21 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
             }
             return list.Count != 0 ? string.Join(Environment.NewLine, list) : "Checksums are valid.";
         }
+    }
+
+    public static bool IsMail(int itemID) => (uint)(itemID - 121) <= (132 - 121);
+
+    protected override void SetPartyValues(PKM pk, bool isParty)
+    {
+        if (pk is not PK3 p3)
+            return;
+
+        // If no mail ID is set, ensure it is set to 0xFF for party and 0x00 for box format.
+        // Box format doesn't store this value, but set it anyway for clarity.
+        if (!IsMail(p3.HeldItem))
+            p3.HeldMailID = isParty ? (sbyte)-1 : (sbyte)0;
+
+        base.SetPartyValues(pk, isParty);
     }
 
     public abstract uint SecurityKey { get; set; }
@@ -593,13 +608,21 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
     public MailDetail GetMail(int mailIndex)
     {
         var ofs = GetMailOffset(mailIndex);
-        var data = Large.Slice(ofs, Mail3.SIZE);
+        var data = Large.AsSpan(ofs, Mail3.SIZE).ToArray();
         return new Mail3(data, ofs, Japanese);
     }
 
-    public abstract string EBerryName { get; }
-    public abstract bool IsEBerryEngima { get; }
-    public abstract MysteryEvent3 MysteryEvent { get; set; }
+    #region eBerry
+    public abstract Span<byte> EReaderBerry();
+    public string EBerryName => GetString(EReaderBerry()[..7]);
+    public bool IsEBerryEngima => EReaderBerry()[0] is 0 or 0xFF;
+    #endregion
+
+    #region eTrainer
+    public abstract Span<byte> EReaderTrainer();
+    #endregion
+
+    public abstract Gen3MysteryData MysteryData { get; set; }
 
     public byte[] GetHallOfFameData()
     {
@@ -612,8 +635,7 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
 
     public void SetHallOfFameData(ReadOnlySpan<byte> value)
     {
-        if (value.Length != SIZE_SECTOR_USED * 2)
-            throw new ArgumentException("Invalid size", nameof(value));
+        ArgumentOutOfRangeException.ThrowIfNotEqual(value.Length, SIZE_SECTOR_USED * 2);
         // HoF Data is split across two sav sectors
         Span<byte> savedata = Data;
         value[..SIZE_SECTOR_USED].CopyTo(savedata[0x1C000..]);
@@ -626,9 +648,9 @@ public abstract class SAV3 : SaveFile, ILangDeviantSave, IEventFlag37
     {
         SetData(sav.Data, 0);
         var s3 = (SAV3)sav;
-        SetData(Small, s3.Small, 0);
-        SetData(Large, s3.Large, 0);
-        SetData(Storage, s3.Storage, 0);
+        SetData(Small, s3.Small);
+        SetData(Large, s3.Large);
+        SetData(Storage, s3.Storage);
     }
 
     #region External Connections

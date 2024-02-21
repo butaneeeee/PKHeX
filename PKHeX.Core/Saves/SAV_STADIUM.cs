@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 namespace PKHeX.Core;
@@ -40,7 +41,7 @@ public abstract class SAV_STADIUM : SaveFile, ILangDeviantSave
         IsPairSwapped = true;
     }
 
-    protected SAV_STADIUM(bool japanese, int size) : base(size)
+    protected SAV_STADIUM(bool japanese, [ConstantExpected] int size) : base(size)
     {
         Japanese = japanese;
         OT = SaveUtil.GetSafeTrainerName(this, (LanguageID)Language);
@@ -80,7 +81,7 @@ public abstract class SAV_STADIUM : SaveFile, ILangDeviantSave
     {
         var result = base.GetFinalData();
         if (IsPairSwapped)
-            ReverseEndianness(result = (byte[])result.Clone());
+            ReverseEndianness(result = [..result]);
         return result;
     }
 

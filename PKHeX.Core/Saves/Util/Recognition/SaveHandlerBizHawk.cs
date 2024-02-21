@@ -4,7 +4,7 @@ using static System.Buffers.Binary.BinaryPrimitives;
 namespace PKHeX.Core;
 
 /// <summary>
-/// Logic for recognizing .dsv save files from DeSmuME.
+/// Logic for recognizing .dsv save files from BizHawk.
 /// </summary>
 public sealed class SaveHandlerBizHawk : ISaveHandler
 {
@@ -19,7 +19,7 @@ public sealed class SaveHandlerBizHawk : ISaveHandler
         return _0x0b == _0x14;
     }
 
-    public bool IsRecognized(int size) => SaveUtil.IsSizeValidNoHandler(size - sizeFooter);
+    public bool IsRecognized(long size) => SaveUtil.IsSizeValidNoHandler(size - sizeFooter);
 
     public SaveHandlerSplitResult? TrySplit(ReadOnlySpan<byte> input)
     {
@@ -30,6 +30,6 @@ public sealed class SaveHandlerBizHawk : ISaveHandler
         var footer = input[realSize..].ToArray();
         var data = input[..realSize].ToArray();
 
-        return new SaveHandlerSplitResult(data, Array.Empty<byte>(), footer);
+        return new SaveHandlerSplitResult(data, [], footer);
     }
 }

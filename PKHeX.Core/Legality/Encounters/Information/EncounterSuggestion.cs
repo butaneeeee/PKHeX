@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using static PKHeX.Core.GameVersion;
 
 namespace PKHeX.Core;
@@ -18,21 +19,37 @@ public static class EncounterSuggestion
         if (pk.WasEgg)
             return GetSuggestedEncounterEgg(pk, loc);
 
-        var chain = EvolutionChain.GetValidPreEvolutions(pk, maxLevel: 100, skipChecks: true);
+        Span<EvoCriteria> chain = stackalloc EvoCriteria[EvolutionTree.MaxEvolutions];
+        var origin = new EvolutionOrigin(pk.Species, (byte)pk.Version, (byte)pk.Generation, (byte)pk.CurrentLevel, (byte)pk.CurrentLevel, OriginOptions.SkipChecks);
+        var count = EvolutionChain.GetOriginChain(chain, pk, origin);
         var ver = (GameVersion)pk.Version;
         var generator = EncounterGenerator.GetGenerator(ver);
-        var w = EncounterUtil.GetMinByLevel(chain, generator.GetPossible(pk, chain, ver, EncounterTypeGroup.Slot));
-        var s = EncounterUtil.GetMinByLevel(chain, generator.GetPossible(pk, chain, ver, EncounterTypeGroup.Static));
+
+        var evos = chain[..count].ToArray();
+        var w = EncounterSelection.GetMinByLevel(evos, generator.GetPossible(pk, evos, ver, EncounterTypeGroup.Slot));
+        var s = EncounterSelection.GetMinByLevel(evos, generator.GetPossible(pk, evos, ver, EncounterTypeGroup.Static));
 
         if (w is null)
             return s is null ? null : GetSuggestedEncounter(pk, s, loc);
         if (s is null)
             return GetSuggestedEncounter(pk, w, loc);
 
-        bool isDefinitelySlot = Array.Exists(chain, z => z.Species == w.Species && z.Form == w.Form);
-        bool isDefinitelyStatic = Array.Exists(chain, z => z.Species == s.Species && z.Form == s.Form);
-        IEncounterable obj = (isDefinitelySlot || !isDefinitelyStatic) ? w : s;
-        return GetSuggestedEncounter(pk, obj, loc);
+        // Prefer the wild slot; fall back to wild slot if none are exact match.
+        if (IsSpeciesFormMatch(chain, w))
+            return GetSuggestedEncounter(pk, w, loc);
+        if (IsSpeciesFormMatch(chain, s))
+            return GetSuggestedEncounter(pk, s, loc);
+        return GetSuggestedEncounter(pk, w, loc);
+    }
+
+    private static bool IsSpeciesFormMatch<T>(ReadOnlySpan<EvoCriteria> evos, T encounter) where T : ISpeciesForm
+    {
+        foreach (var evo in evos)
+        {
+            if (evo.Species == encounter.Species && evo.Form == encounter.Form)
+                return true;
+        }
+        return false;
     }
 
     private static EncounterSuggestionData GetSuggestedEncounterEgg(PKM pk, int loc = -1)
@@ -48,7 +65,7 @@ public static class EncounterSuggestion
             return pk.CurrentLevel; // be generous with transfer conditions
         if (pk.Format < 5) // and native
             return pk.Format == 2 && pk.Met_Location != 0 ? 1 : 0;
-        return 1; // gen5+
+        return 1; // Gen5+
     }
 
     public static int GetSuggestedEncounterEggLocationEgg(PKM pk, bool traded = false)
@@ -61,7 +78,7 @@ public static class EncounterSuggestion
         1 or 2 or 3 => 0,
         4 => traded ? Locations.LinkTrade4 : Locations.Daycare4,
         5 => traded ? Locations.LinkTrade5 : Locations.Daycare5,
-        8 when BDSP.Contains(version)=> traded ? Locations.LinkTrade6NPC : Locations.Daycare8b,
+        8 when BDSP.Contains(version) => traded ? Locations.LinkTrade6NPC : Locations.Daycare8b,
         9 => Locations.Picnic9,
         _ => traded ? Locations.LinkTrade6 : Locations.Daycare5,
     };
@@ -95,7 +112,7 @@ public static class EncounterSuggestion
         if (pk.Format == 4) // Pal Park
             return Locations.Transfer3;
         if (pk.Format >= 5) // Transporter
-            return Legal.GetTransfer45MetLocation(pk);
+            return PK5.GetTransferMetLocation4(pk);
         return -1;
     }
 
@@ -104,22 +121,22 @@ public static class EncounterSuggestion
         if (startLevel >= 100)
             startLevel = 100;
 
-        var table = EvolutionTree.GetEvolutionTree(pk.Context);
-        int count = 1;
-        byte i = 100;
+        int most = 1;
+        Span<EvoCriteria> chain = stackalloc EvoCriteria[EvolutionTree.MaxEvolutions];
+        var origin = new EvolutionOrigin(pk.Species, (byte)pk.Version, (byte)pk.Generation, startLevel, 100, OriginOptions.SkipChecks);
         while (true)
         {
-            var evos = table.GetValidPreEvolutions(pk, levelMax: i, skipChecks: true, levelMin: startLevel);
-            if (evos.Length < count) // lost an evolution, prior level was minimum current level
-                return GetMaxLevelMax(evos) + 1;
-            count = evos.Length;
-            if (i == startLevel)
+            var count = EvolutionChain.GetOriginChain(chain, pk, origin);
+            if (count < most) // lost an evolution, prior level was minimum current level
+                return GetMaxLevelMax(chain) + 1;
+            most = count;
+            if (origin.LevelMax == origin.LevelMin)
                 return startLevel;
-            --i;
+            origin = origin with { LevelMax = (byte)(origin.LevelMax - 1) };
         }
     }
 
-    private static int GetMaxLevelMax(EvoCriteria[] evos)
+    private static int GetMaxLevelMax(ReadOnlySpan<EvoCriteria> evos)
     {
         int max = 0;
         foreach (var evo in evos)
@@ -127,36 +144,58 @@ public static class EncounterSuggestion
         return max;
     }
 
-    public static bool IterateMinimumCurrentLevel(PKM pk, bool isLegal, int max = 100)
+    /// <summary>
+    /// Iterates through all possible levels to drop to the lowest level possible.
+    /// </summary>
+    /// <param name="pk">Entity to modify</param>
+    /// <param name="isLegal">Current state is legal or invalid (false)</param>
+    /// <param name="level">Maximum level to iterate down from</param>
+    /// <returns>True if the level was changed, false if it was already at the lowest level possible or impossible.</returns>
+    public static bool IterateMinimumCurrentLevel(PKM pk, bool isLegal, int level = 100)
     {
-        var original = pk.CurrentLevel;
+        // Find the lowest level possible while still remaining legal.
+        var growth = pk.PersonalInfo.EXPGrowth;
+        var table = Experience.GetTable(growth);
+
         var originalEXP = pk.EXP;
+        var original = Experience.GetLevel(originalEXP, table);
         if (isLegal)
         {
+            // If we can't go any lower, we're already at the lowest level possible.
             if (original == 1)
                 return false;
-            max = original - 1;
-        }
 
-        for (int i = max; i != 0; i--)
+            // Skip to original - 1, since all levels [original,max] are already legal.
+            level = original - 1;
+        }
+        // If it's not legal, then we'll first try the max level and abort if it will never be legal.
+
+        // Find the first level that is illegal via searching downwards, and set it to the level above it.
+        while (level != 0)
         {
-            pk.CurrentLevel = i;
+            pk.EXP = Experience.GetEXP(level, table);
             var la = new LegalityAnalysis(pk);
             var valid = la.Valid;
             if (valid)
+            {
+                --level;
                 continue;
+            }
 
-            var revert = Math.Min(100, i + 1);
-            if (revert == original)
+            // First illegal level found, revert to the previous level.
+            level = Math.Min(100, level + 1);
+            if (level == original) // same, revert actual EXP value.
             {
                 pk.EXP = originalEXP;
                 return false;
             }
 
-            pk.CurrentLevel = revert;
+            pk.EXP = Experience.GetEXP(level, table);
             return true;
         }
-        return true; // 1
+
+        // Lowest level possible (1) is deemed as legal per above loop.
+        return true;
     }
 
     /// <summary>
@@ -181,5 +220,35 @@ public static class EncounterSuggestion
                 minMove = i;
         }
         return Math.Max(minMove, minLevel);
+    }
+}
+
+internal static class EncounterSelection
+{
+    internal static T? GetMinByLevel<T>(ReadOnlySpan<EvoCriteria> chain, IEnumerable<T> possible) where T : class, IEncounterTemplate
+    {
+        // MinBy grading: prefer species-form match, select lowest min level encounter.
+        // Minimum allocation :)
+        T? result = null;
+        int min = int.MaxValue;
+
+        foreach (var enc in possible)
+        {
+            int m = int.MaxValue;
+            foreach (var evo in chain)
+            {
+                bool specDiff = enc.Species != evo.Species || enc.Form != evo.Form;
+                var val = (Convert.ToInt32(specDiff) << 16) | enc.LevelMin;
+                if (val < m)
+                    m = val;
+            }
+
+            if (m >= min)
+                continue;
+            min = m;
+            result = enc;
+        }
+
+        return result;
     }
 }

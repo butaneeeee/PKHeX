@@ -13,7 +13,7 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
     protected internal override string ShortSummary => $"{OT} ({Version}) - {PlayTimeString}";
     public override string Extension => this.GCExtension();
     public override PersonalTable3 Personal => PersonalTable.RS;
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_COLO;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_RS;
     public SAV3GCMemoryCard? MemoryCard { get; init; }
 
     // 3 Save files are stored
@@ -37,16 +37,19 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
     private int Memo;
 
     private readonly byte[] BAK;
+    private readonly bool Japanese;
 
-    public SAV3Colosseum() : base(SaveUtil.SIZE_G3COLO)
+    public SAV3Colosseum(bool japanese = false) : base(SaveUtil.SIZE_G3COLO)
     {
-        BAK = Array.Empty<byte>();
+        Japanese = japanese;
+        BAK = [];
         StrategyMemo = Initialize();
         ClearBoxes();
     }
 
     public SAV3Colosseum(byte[] data) : base(data)
     {
+        Japanese = data[0] == 0x83; // Japanese game name first character
         BAK = data;
         InitializeData();
         StrategyMemo = Initialize();
@@ -65,7 +68,9 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
         // Count up how many party slots are active.
         for (int i = 0; i < 6; i++)
         {
-            if (GetPartySlot(Data, GetPartyOffset(i)).Species != 0)
+            var ofs = GetPartyOffset(i);
+            var span = Data.AsSpan(ofs);
+            if (ReadUInt16BigEndian(span) != 0) // species is at offset 0x00
                 PartyCount++;
         }
 
@@ -143,7 +148,7 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
     public override int MaxItemID => Legal.MaxItemID_3_COLO;
     public override int MaxGameID => Legal.MaxGameID_3;
 
-    public override int MaxEV => 255;
+    public override int MaxEV => EffortValues.Max255;
     public override int Generation => 3;
     public override EntityContext Context => EntityContext.Gen3;
     protected override int GiftCountMax => 1;
@@ -156,8 +161,7 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
 
     private static byte[] EncryptColosseum(ReadOnlySpan<byte> input, Span<byte> digest)
     {
-        if (input.Length != SLOT_SIZE)
-            throw new ArgumentException("Incorrect slot size", nameof(input));
+        ArgumentOutOfRangeException.ThrowIfNotEqual(input.Length, SLOT_SIZE);
 
         byte[] output = input.ToArray();
 
@@ -165,8 +169,10 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
         for (int i = 0; i < digest.Length; i++)
             digest[i] = (byte)~digest[i];
 
-        var crypt = output.AsSpan(0x18, SLOT_SIZE - (2 * sha1HashSize));
-        for (int i = 0; i < crypt.Length; i += sha1HashSize)
+        const int start = 0x18;
+        const int end = (SLOT_SIZE - (2 * sha1HashSize));
+        var crypt = output.AsSpan();
+        for (int i = start; i < end; i += sha1HashSize)
         {
             var slice = crypt.Slice(i, digest.Length);
             for (int j = 0; j < digest.Length; j++)
@@ -178,8 +184,7 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
 
     private static byte[] DecryptColosseum(ReadOnlySpan<byte> input, Span<byte> digest)
     {
-        if (input.Length != SLOT_SIZE)
-            throw new ArgumentException("Incorrect slot size", nameof(input));
+        ArgumentOutOfRangeException.ThrowIfNotEqual(input.Length, SLOT_SIZE);
 
         byte[] output = input.ToArray();
 
@@ -188,12 +193,14 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
             digest[i] = (byte)~digest[i];
 
         Span<byte> hash = stackalloc byte[sha1HashSize];
-        var crypt = output.AsSpan(0x18, SLOT_SIZE - (2 * sha1HashSize));
-        for (int i = 0; i < crypt.Length; i += sha1HashSize)
+        const int start = 0x18;
+        const int end = (SLOT_SIZE - (2 * sha1HashSize));
+        var crypt = output.AsSpan();
+        for (int i = start; i < end; i += sha1HashSize)
         {
-            var slice = crypt.Slice(i, sha1HashSize);
+            var slice = crypt.Slice(i, Math.Min(crypt.Length - i, sha1HashSize));
             SHA1.HashData(slice, hash); // update digest
-            for (int j = 0; j < digest.Length; j++)
+            for (int j = 0; j < slice.Length; j++)
                 slice[j] ^= digest[j];
             hash.CopyTo(digest); // for use in next loop
         }
@@ -274,14 +281,16 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
         return Box + (((30 * SIZE_STORED) + 0x14)*box) + 0x14;
     }
 
+    private Span<byte> GetBoxNameSpan(int box) => Data.AsSpan(Box + (0x24A4 * box), 16);
+
     public override string GetBoxName(int box)
     {
-        return GetString(Box + (0x24A4 * box), 16);
+        return GetString(GetBoxNameSpan(box));
     }
 
     public override void SetBoxName(int box, ReadOnlySpan<char> value)
     {
-        SetString(Data.AsSpan(Box + (0x24A4 * box), 16), value, 8, StringConverterOption.ClearZero);
+        SetString(GetBoxNameSpan(box), value, 8, StringConverterOption.ClearZero);
     }
 
     protected override CK3 GetPKM(byte[] data)
@@ -300,6 +309,8 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
 
         ck3.CurrentRegion = (byte)CurrentRegion;
         ck3.OriginalRegion = (byte)OriginalRegion;
+
+        ck3.ForceCorrectFatefulState(Japanese, ck3.FatefulEncounter);
     }
 
     protected override void SetDex(PKM pk)
@@ -359,8 +370,8 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
     }
 
     // Trainer Info (offset 0x78, length 0xB18, end @ 0xB90)
-    public override string OT { get => GetString(0x78, 20); set { SetString(Data.AsSpan(0x78, 20), value, 10, StringConverterOption.ClearZero); OT2 = value; } }
-    public string OT2 { get => GetString(0x8C, 20); set => SetString(Data.AsSpan(0x8C, 20), value, 10, StringConverterOption.ClearZero); }
+    public override string OT { get => GetString(Data.AsSpan(0x78, 20)); set { SetString(Data.AsSpan(0x78, 20), value, 10, StringConverterOption.ClearZero); OT2 = value; } }
+    public string OT2 { get => GetString(Data.AsSpan(0x8C, 20)); set => SetString(Data.AsSpan(0x8C, 20), value, 10, StringConverterOption.ClearZero); }
 
     public override uint ID32 { get => ReadUInt32BigEndian(Data.AsSpan(0xA4)); set => WriteUInt32BigEndian(Data.AsSpan(0xA4), value); }
     public override ushort SID16 { get => ReadUInt16BigEndian(Data.AsSpan(0xA4)); set => WriteUInt16BigEndian(Data.AsSpan(0xA4), value); }
@@ -369,21 +380,22 @@ public sealed class SAV3Colosseum : SaveFile, IGCSaveFile
     public override int Gender { get => Data[0xAF8]; set => Data[0xAF8] = (byte)value; }
     public override uint Money { get => ReadUInt32BigEndian(Data.AsSpan(0xAFC)); set => WriteUInt32BigEndian(Data.AsSpan(0xAFC), value); }
     public uint Coupons { get => ReadUInt32BigEndian(Data.AsSpan(0xB00)); set => WriteUInt32BigEndian(Data.AsSpan(0xB00), value); }
-    public string RUI_Name { get => GetString(0xB3A, 20); set => SetString(Data.AsSpan(0xB3A, 20), value, 10, StringConverterOption.ClearZero); }
+    public string RUI_Name { get => GetString(Data.AsSpan(0xB3A, 20)); set => SetString(Data.AsSpan(0xB3A, 20), value, 10, StringConverterOption.ClearZero); }
 
     public override IReadOnlyList<InventoryPouch> Inventory
     {
         get
         {
+            var info = ItemStorage3Colo.Instance;
             InventoryPouch[] pouch =
-            {
-                new InventoryPouch3GC(InventoryType.Items, Legal.Pouch_Items_COLO, 99, 0x007F8, 20), // 20 COLO, 30 XD
-                new InventoryPouch3GC(InventoryType.KeyItems, Legal.Pouch_Key_COLO, 1, 0x00848, 43),
-                new InventoryPouch3GC(InventoryType.Balls, Legal.Pouch_Ball_RS, 99, 0x008F4, 16),
-                new InventoryPouch3GC(InventoryType.TMHMs, Legal.Pouch_TM_RS, 99, 0x00934, 64), // no HMs
-                new InventoryPouch3GC(InventoryType.Berries, Legal.Pouch_Berries_RS, 999, 0x00A34, 46),
-                new InventoryPouch3GC(InventoryType.Medicine, Legal.Pouch_Cologne_COLO, 99, 0x00AEC, 3), // Cologne
-            };
+            [
+                new InventoryPouch3GC(InventoryType.Items, info, 99, 0x007F8, 20), // 20 COLO, 30 XD
+                new InventoryPouch3GC(InventoryType.KeyItems, info, 1, 0x00848, 43),
+                new InventoryPouch3GC(InventoryType.Balls, info, 99, 0x008F4, 16),
+                new InventoryPouch3GC(InventoryType.TMHMs, info, 99, 0x00934, 64), // no HMs
+                new InventoryPouch3GC(InventoryType.Berries, info, 999, 0x00A34, 46),
+                new InventoryPouch3GC(InventoryType.Medicine, info, 99, 0x00AEC, 3), // Cologne
+            ];
             return pouch.LoadAll(Data);
         }
         set => value.SaveAll(Data);

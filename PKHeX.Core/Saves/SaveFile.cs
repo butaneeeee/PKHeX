@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace PKHeX.Core;
@@ -22,7 +23,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         Metadata = new SaveFileMetadata(this);
     }
 
-    protected SaveFile(int size = 0) : this(size == 0 ? Array.Empty<byte>() : new byte[size], false) { }
+    protected SaveFile([ConstantExpected] int size = 0) : this(size == 0 ? [] : new byte[size], false) { }
 
     protected internal abstract string ShortSummary { get; }
     public abstract string Extension { get; }
@@ -67,19 +68,15 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     #endregion
 
     #region Savedata Container Handling
-    public byte[] GetData(int offset, int length) => GetData(Data, offset, length);
-    protected static byte[] GetData(byte[] data, int offset, int length) => data.Slice(offset, length);
-    public void SetData(byte[] input, int offset) => SetData(Data, input, offset);
-    public void SetData(ReadOnlySpan<byte> input, int offset) => SetData(Data, input, offset);
+    public void SetData(ReadOnlySpan<byte> input, int offset) => SetData(Data.AsSpan(offset), input);
 
-    public void SetData(Span<byte> dest, ReadOnlySpan<byte> input, int offset)
+    public void SetData(Span<byte> dest, ReadOnlySpan<byte> input)
     {
-        input.CopyTo(dest[offset..]);
+        input.CopyTo(dest);
         State.Edited = true;
     }
 
     public abstract string GetString(ReadOnlySpan<byte> data);
-    public string GetString(int offset, int length) => GetString(Data.AsSpan(offset, length));
     public abstract int SetString(Span<byte> destBuffer, ReadOnlySpan<char> value, int maxLength, StringConverterOption option);
     #endregion
 
@@ -117,15 +114,15 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     /// <remarks>Flag is Set (true) or not Set (false)</remarks>
     public virtual void SetFlag(int offset, int bitIndex, bool value) => FlagUtil.SetFlag(Data, offset, bitIndex, value);
 
-    public virtual IReadOnlyList<InventoryPouch> Inventory { get => Array.Empty<InventoryPouch>(); set { } }
+    public virtual IReadOnlyList<InventoryPouch> Inventory { get => []; set { } }
 
     #region Mystery Gift
     protected virtual int GiftCountMax => int.MinValue;
     protected virtual int GiftFlagMax => 0x800;
     protected int WondercardData { get; set; } = int.MinValue;
     public bool HasWondercards => WondercardData > -1;
-    protected virtual bool[] MysteryGiftReceivedFlags { get => Array.Empty<bool>(); set { } }
-    protected virtual DataMysteryGift[] MysteryGiftCards { get => Array.Empty<DataMysteryGift>(); set { } }
+    protected virtual bool[] MysteryGiftReceivedFlags { get => []; set { } }
+    protected virtual DataMysteryGift[] MysteryGiftCards { get => []; set { } }
 
     public virtual MysteryGiftAlbum GiftAlbum
     {
@@ -206,7 +203,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
 
             PKM[] data = new PKM[count];
             for (int i = 0; i < data.Length; i++)
-                data[i] = GetPartySlot(PartyBuffer, GetPartyOffset(i));
+                data[i] = GetPartySlotAtIndex(i);
             return data;
         }
         set
@@ -219,10 +216,10 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
 #endif
             int ctr = 0;
             foreach (var exist in value.Where(pk => pk.Species != 0))
-                SetPartySlot(exist, PartyBuffer, GetPartyOffset(ctr++));
+                SetPartySlotAtIndex(exist, ctr++);
             PartyCount = ctr;
             for (int i = ctr; i < 6; i++)
-                SetPartySlot(BlankPKM, PartyBuffer, GetPartyOffset(i));
+                SetPartySlotAtIndex(BlankPKM, i);
         }
     }
     #endregion
@@ -248,7 +245,8 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     public virtual void SetDaycareOccupied(int loc, int slot, bool occupied) { }
     #endregion
 
-    public PKM GetPartySlotAtIndex(int index) => GetPartySlot(PartyBuffer, GetPartyOffset(index));
+    private Span<byte> GetPartySpan(int index) => PartyBuffer[GetPartyOffset(index)..];
+    public PKM GetPartySlotAtIndex(int index) => GetPartySlot(GetPartySpan(index));
 
     public void SetPartySlotAtIndex(PKM pk, int index, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
     {
@@ -267,48 +265,39 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
             PartyCount = index;
         }
 
-        int offset = GetPartyOffset(index);
-        SetPartySlot(pk, PartyBuffer, offset, trade, dex);
+        SetPartySlot(pk, GetPartySpan(index), trade, dex);
     }
 
-    public void SetSlotFormatParty(PKM pk, byte[] data, int offset, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
+    public void SetSlotFormatParty(PKM pk, Span<byte> data, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
     {
         if (pk.GetType() != PKMType)
             throw new ArgumentException($"PKM Format needs to be {PKMType} when setting to this Save File.");
 
         UpdatePKM(pk, isParty: true, trade, dex);
         SetPartyValues(pk, isParty: true);
-        WritePartySlot(pk, data, offset);
+        WritePartySlot(pk, data);
     }
 
-    public void SetPartySlot(PKM pk, byte[] data, int offset, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
-    {
-        if (pk.GetType() != PKMType)
-            throw new ArgumentException($"PKM Format needs to be {PKMType} when setting to this Save File.");
-
-        UpdatePKM(pk, isParty: true, trade, dex);
-        SetPartyValues(pk, isParty: true);
-        WritePartySlot(pk, data, offset);
-    }
-
-    public void SetSlotFormatStored(PKM pk, Span<byte> data, int offset, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
+    public void SetSlotFormatStored(PKM pk, Span<byte> data, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
     {
         if (pk.GetType() != PKMType)
             throw new ArgumentException($"PKM Format needs to be {PKMType} when setting to this Save File.");
 
         UpdatePKM(pk, isParty: false, trade, dex);
         SetPartyValues(pk, isParty: false);
-        WriteSlotFormatStored(pk, data, offset);
+        WriteSlotFormatStored(pk, data);
     }
 
-    public void SetBoxSlot(PKM pk, Span<byte> data, int offset, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
+    public void SetPartySlot(PKM pk, Span<byte> data, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault) => SetSlotFormatParty(pk, data, trade, dex);
+
+    public void SetBoxSlot(PKM pk, Span<byte> data, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
     {
         if (pk.GetType() != PKMType)
             throw new ArgumentException($"PKM Format needs to be {PKMType} when setting to this Save File.");
 
         UpdatePKM(pk, isParty: false, trade, dex);
         SetPartyValues(pk, isParty: false);
-        WriteBoxSlot(pk, data, offset);
+        WriteBoxSlot(pk, data);
     }
 
     public void DeletePartySlot(int slot)
@@ -339,24 +328,24 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     public virtual int SIZE_BOXSLOT => SIZE_STORED;
     public abstract int MaxEV { get; }
     public virtual int MaxIV => 31;
-    public abstract IReadOnlyList<ushort> HeldItems { get; }
-    protected virtual byte[] BoxBuffer => Data;
-    protected virtual byte[] PartyBuffer => Data;
+    public abstract ReadOnlySpan<ushort> HeldItems { get; }
+    protected virtual Span<byte> BoxBuffer => Data;
+    protected virtual Span<byte> PartyBuffer => Data;
     public virtual bool IsPKMPresent(ReadOnlySpan<byte> data) => EntityDetection.IsPresent(data);
     public virtual PKM GetDecryptedPKM(byte[] data) => GetPKM(DecryptPKM(data));
-    public virtual PKM GetPartySlot(byte[] data, int offset) => GetDecryptedPKM(GetData(data, offset, SIZE_PARTY));
-    public virtual PKM GetStoredSlot(byte[] data, int offset) => GetDecryptedPKM(GetData(data, offset, SIZE_STORED));
-    public virtual PKM GetBoxSlot(int offset) => GetStoredSlot(BoxBuffer, offset);
+    public virtual PKM GetPartySlot(ReadOnlySpan<byte> data) => GetDecryptedPKM(data[..SIZE_PARTY].ToArray());
+    public virtual PKM GetStoredSlot(ReadOnlySpan<byte> data) => GetDecryptedPKM(data[..SIZE_STORED].ToArray());
+    public virtual PKM GetBoxSlot(int offset) => GetStoredSlot(BoxBuffer[offset..]);
 
     public virtual byte[] GetDataForFormatStored(PKM pk) => pk.EncryptedBoxData;
     public virtual byte[] GetDataForFormatParty(PKM pk) => pk.EncryptedPartyData;
     public virtual byte[] GetDataForParty(PKM pk) => pk.EncryptedPartyData;
     public virtual byte[] GetDataForBox(PKM pk) => pk.EncryptedBoxData;
 
-    public virtual void WriteSlotFormatStored(PKM pk, Span<byte> data, int offset) => SetData(data, GetDataForFormatStored(pk), offset);
-    public virtual void WriteSlotFormatParty(PKM pk, Span<byte> data, int offset) => SetData(data, GetDataForFormatParty(pk), offset);
-    public virtual void WritePartySlot(PKM pk, Span<byte> data, int offset) => SetData(data, GetDataForParty(pk), offset);
-    public virtual void WriteBoxSlot(PKM pk, Span<byte> data, int offset) => SetData(data, GetDataForBox(pk), offset);
+    public virtual void WriteSlotFormatStored(PKM pk, Span<byte> data) => SetData(data, GetDataForFormatStored(pk));
+    public virtual void WriteSlotFormatParty(PKM pk, Span<byte> data) => SetData(data, GetDataForFormatParty(pk));
+    public virtual void WritePartySlot(PKM pk, Span<byte> data) => SetData(data, GetDataForParty(pk));
+    public virtual void WriteBoxSlot(PKM pk, Span<byte> data) => SetData(data, GetDataForBox(pk));
 
     protected virtual void SetPartyValues(PKM pk, bool isParty)
     {
@@ -372,7 +361,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     /// </summary>
     /// <param name="pk">Entity to adapt</param>
     /// <param name="party">Entity exists in party format</param>
-    /// <param name="trade">Setting on whether or not to adapt</param>
+    /// <param name="trade">Setting on whether to adapt</param>
     public void AdaptPKM(PKM pk, bool party = true, PKMImportSetting trade = PKMImportSetting.UseDefault)
     {
         if (GetTradeUpdateSetting(trade))
@@ -446,7 +435,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     public bool HasBox => Box > -1;
     public virtual int BoxSlotCount => 30;
     public virtual int BoxesUnlocked { get => -1; set { } }
-    public virtual byte[] BoxFlags { get => Array.Empty<byte>(); set { } }
+    public virtual byte[] BoxFlags { get => []; set { } }
     public virtual int CurrentBox { get; set; }
 
     #region BoxData
@@ -463,8 +452,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         }
         set
         {
-            if (value.Count != BoxCount * BoxSlotCount)
-                throw new ArgumentException($"Expected {BoxCount * BoxSlotCount}, got {value.Count}");
+            ArgumentOutOfRangeException.ThrowIfNotEqual(value.Count, BoxCount * BoxSlotCount);
 
             for (int b = 0; b < BoxCount; b++)
                 SetBoxData(value, b, b * BoxSlotCount);
@@ -504,12 +492,12 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     #endregion
 
     #region Storage Health & Metadata
-    protected int[] TeamSlots = Array.Empty<int>();
+    protected int[] TeamSlots = [];
 
     /// <summary>
     /// Slot indexes that are protected from overwriting.
     /// </summary>
-    protected virtual IList<int>[] SlotPointers => new[] { TeamSlots };
+    protected virtual IList<int>[] SlotPointers => [ TeamSlots ];
     public virtual StorageSlotSource GetSlotFlags(int index) => StorageSlotSource.None;
     public StorageSlotSource GetSlotFlags(int box, int slot) => GetSlotFlags((box * BoxSlotCount) + slot);
     public bool IsSlotLocked(int box, int slot) => GetSlotFlags(box, slot).HasFlag(StorageSlotSource.Locked);
@@ -522,13 +510,15 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
 
     public int NextOpenBoxSlot(int lastKnownOccupied = -1)
     {
-        var storage = BoxBuffer.AsSpan();
+        var storage = BoxBuffer;
         int count = SlotCount;
         for (int i = lastKnownOccupied + 1; i < count; i++)
         {
             int offset = GetBoxSlotOffset(i);
-            if (!IsPKMPresent(storage[offset..]))
-                return i;
+            // overwrite protect is only true if there is already data in slot
+            if (IsPKMPresent(storage[offset..]))
+                continue;
+            return i;
         }
         return StorageFullValue;
     }
@@ -593,10 +583,10 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     }
 
     public void SetBoxSlotAtIndex(PKM pk, int box, int slot, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
-        => SetBoxSlot(pk, BoxBuffer, GetBoxSlotOffset(box, slot), trade, dex);
+        => SetBoxSlot(pk, BoxBuffer[GetBoxSlotOffset(box, slot)..], trade, dex);
 
     public void SetBoxSlotAtIndex(PKM pk, int index, PKMImportSetting trade = PKMImportSetting.UseDefault, PKMImportSetting dex = PKMImportSetting.UseDefault)
-        => SetBoxSlot(pk, BoxBuffer, GetBoxSlotOffset(index), trade, dex);
+        => SetBoxSlot(pk, BoxBuffer[GetBoxSlotOffset(index)..], trade, dex);
     #endregion
 
     #region Storage Manipulations
@@ -612,7 +602,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         return true;
     }
 
-    private void MoveBox(int box, int insertBeforeBox, byte[] storage)
+    private void MoveBox(int box, int insertBeforeBox, Span<byte> storage)
     {
         int pos1 = BoxSlotCount * box;
         int pos2 = BoxSlotCount * insertBeforeBox;
@@ -620,7 +610,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         int max = Math.Max(pos1, pos2);
 
         int len = BoxSlotCount * SIZE_BOXSLOT;
-        byte[] boxdata = storage.Slice(GetBoxOffset(0), len * BoxCount); // get all boxes
+        byte[] boxdata = storage.Slice(GetBoxOffset(0), len * BoxCount).ToArray(); // get all boxes
         string[] boxNames = Get(GetBoxName, BoxCount);
         int[] boxWallpapers = Get(GetBoxWallpaper, BoxCount);
 
@@ -646,7 +636,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
                 b = ctr++;
             }
 
-            Buffer.BlockCopy(boxdata, len * i, storage, GetBoxOffset(b), len);
+            boxdata.AsSpan(len * i, len).CopyTo(storage[GetBoxOffset(b)..]);
             SetBoxName(b, boxNames[i]);
             SetBoxWallpaper(b, boxWallpapers[i]);
         }
@@ -754,7 +744,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     /// <returns>Count of deleted <see cref="PKM"/> slots.</returns>
     public int ClearBoxes(int BoxStart = 0, int BoxEnd = -1, Func<PKM, bool>? deleteCriteria = null)
     {
-        var storage = BoxBuffer.AsSpan();
+        var storage = BoxBuffer;
 
         if ((uint)BoxEnd >= BoxCount)
             BoxEnd = BoxCount - 1;
@@ -777,7 +767,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
                         continue;
                 }
 
-                SetData(storage, blank, ofs);
+                SetData(storage[ofs..], blank);
                 ++deleted;
             }
         }
@@ -796,7 +786,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         if ((uint)BoxEnd >= BoxCount)
             BoxEnd = BoxCount - 1;
 
-        var storage = BoxBuffer.AsSpan();
+        var storage = BoxBuffer;
         int modified = 0;
         for (int b = BoxStart; b <= BoxEnd; b++)
         {
@@ -805,12 +795,13 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
                 if (IsSlotOverwriteProtected(b, s))
                     continue;
                 var ofs = GetBoxSlotOffset(b, s);
-                if (!IsPKMPresent(storage[ofs..]))
+                var dest = storage[ofs..];
+                if (!IsPKMPresent(dest))
                     continue;
                 var pk = GetBoxSlotAtIndex(b, s);
                 action(pk);
                 ++modified;
-                SetBoxSlot(pk, storage, ofs, PKMImportSetting.Skip, PKMImportSetting.Skip);
+                SetBoxSlot(pk, dest, PKMImportSetting.Skip, PKMImportSetting.Skip);
             }
         }
         return modified;
@@ -846,7 +837,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
     public byte[] GetPCBinary() => BoxData.SelectMany(GetDataForBox).ToArray();
     public byte[] GetBoxBinary(int box) => GetBoxData(box).SelectMany(GetDataForBox).ToArray();
 
-    public bool SetPCBinary(byte[] data)
+    public bool SetPCBinary(ReadOnlySpan<byte> data)
     {
         if (IsRegionOverwriteProtected(0, SlotCount))
             return false;
@@ -855,7 +846,7 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         return SetConcatenatedBinary(data, expectLength);
     }
 
-    public bool SetBoxBinary(byte[] data, int box)
+    public bool SetBoxBinary(ReadOnlySpan<byte> data, int box)
     {
         int start = box * BoxSlotCount;
         int end = start + BoxSlotCount;
@@ -867,17 +858,21 @@ public abstract class SaveFile : ITrainerInfo, IGameValueLimit, IBoxDetailWallpa
         return SetConcatenatedBinary(data, expectLength, start);
     }
 
-    private bool SetConcatenatedBinary(byte[] data, int expectLength, int start = 0)
+    private bool SetConcatenatedBinary(ReadOnlySpan<byte> data, int expectLength, int start = 0)
     {
         if (data.Length != expectLength)
             return false;
 
-        var BD = BoxData;
         var entryLength = SIZE_BOXSLOT;
-        var pkdata = ArrayUtil.EnumerateSplit(data, entryLength);
-
-        pkdata.Select(GetPKM).CopyTo(BD, IsSlotOverwriteProtected, start);
-        BoxData = BD;
+        for (int i = 0, ctr = start; i < data.Length; i += entryLength)
+        {
+            if (IsSlotOverwriteProtected(ctr))
+                continue;
+            var src = data.Slice(i, entryLength);
+            var arr = src.ToArray();
+            var pk = GetPKM(arr);
+            SetBoxSlotAtIndex(pk, ctr++);
+        }
         return true;
     }
     #endregion
@@ -901,7 +896,7 @@ public static class StorageUtil
             {
                 if (ctr != i) // copy required
                 {
-                    shiftedSlots = true; // appending empty slots afterwards is now required since a rewrite was done
+                    shiftedSlots = true; // appending empty slots afterward is now required since a rewrite was done
                     int destOfs = sav.GetBoxSlotOffset(ctr);
                     storage[offset..(offset + size)].CopyTo(storage[destOfs..(destOfs + size)]);
                     SlotPointerUtil.UpdateRepointFrom(ctr, i, slotPointers);

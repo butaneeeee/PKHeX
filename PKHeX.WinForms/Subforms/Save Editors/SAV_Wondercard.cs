@@ -26,13 +26,7 @@ public partial class SAV_Wondercard : Form
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
         SAV = (Origin = sav).Clone();
         mga = SAV.GiftAlbum;
-
-        pba = SAV.Generation switch
-        {
-            4 => PopulateViewGiftsG4().ToArray(),
-            5 or 6 or 7 => PopulateViewGiftsG567().ToArray(),
-            _ => throw new ArgumentOutOfRangeException(nameof(SAV.Generation), "Game not supported."),
-        };
+        pba = GetGiftPictureBoxes(SAV.Generation);
         foreach (var pb in pba)
         {
             pb.AllowDrop = true;
@@ -41,6 +35,15 @@ public partial class SAV_Wondercard : Form
             pb.MouseDown += BoxSlot_MouseDown;
             pb.ContextMenuStrip = mnuVSD;
             pb.MouseHover += (_, _) => Summary.Show(pb, mga.Gifts[pba.IndexOf(pb)]);
+            pb.Enter += (sender, e) =>
+            {
+                var index = pba.IndexOf(pb);
+                if (index < 0)
+                    return;
+
+                var enc = mga.Gifts[index];
+                pb.AccessibleDescription = string.Join(Environment.NewLine, enc.GetTextLines());
+            };
         }
 
         SetGiftBoxes();
@@ -61,11 +64,18 @@ public partial class SAV_Wondercard : Form
             ViewGiftData(g);
     }
 
+    private List<PictureBox> GetGiftPictureBoxes(int generation) => generation switch
+    {
+        4 => PopulateViewGiftsG4(),
+        5 or 6 or 7 => PopulateViewGiftsG567(),
+        _ => throw new ArgumentOutOfRangeException(nameof(generation), generation, "Game not supported."),
+    };
+
     private readonly MysteryGiftAlbum mga;
     private DataMysteryGift? mg;
-    private readonly IList<PictureBox> pba;
+    private readonly List<PictureBox> pba; // don't mutate this list
 
-    // Repopulation Functions
+    // Re-population Functions
     private void SetBackground(int index, Image bg)
     {
         for (int i = 0; i < mga.Gifts.Length; i++)
@@ -133,13 +143,14 @@ public partial class SAV_Wondercard : Form
     private void B_Import_Click(object sender, EventArgs e)
     {
         var fileFilter = WinFormsUtil.GetMysterGiftFilter(SAV.Context);
-        using var import = new OpenFileDialog { Filter = fileFilter };
+        using var import = new OpenFileDialog();
+        import.Filter = fileFilter;
         if (import.ShowDialog() != DialogResult.OK)
             return;
 
         var path = import.FileName;
         var data = File.ReadAllBytes(path);
-        var ext = Path.GetExtension(path);
+        var ext = Path.GetExtension(path.AsSpan());
         var gift = MysteryGift.GetMysteryGift(data, ext);
         if (gift == null)
         {
@@ -217,7 +228,7 @@ public partial class SAV_Wondercard : Form
             WinFormsUtil.Alert(MsgMysteryGiftSlotFail, $"{gift.Type} != {other.Type}");
             return;
         }
-        else if (gift is PCD { IsLockCapsule: true } != (index == 11))
+        else if (gift is PCD g && (g is { IsLockCapsule: true } != (index == 11)))
         {
             WinFormsUtil.Alert(MsgMysteryGiftSlotFail, $"{GameInfo.Strings.Item[533]} slot not valid.");
             return;
@@ -242,17 +253,17 @@ public partial class SAV_Wondercard : Form
         int i = index;
         while (i < mga.Gifts.Length - 1)
         {
-            if (mga.Gifts[i+1].Empty)
+            if (mga.Gifts[i + 1].Empty)
                 break;
-            if (mga.Gifts[i+1].Type != mga.Gifts[i].Type)
+            if (mga.Gifts[i + 1].Type != mga.Gifts[i].Type)
                 break;
 
             i++;
 
             var mg1 = mga.Gifts[i];
-            var mg2 = mga.Gifts[i-1];
+            var mg2 = mga.Gifts[i - 1];
 
-            mga.Gifts[i-1] = mg1;
+            mga.Gifts[i - 1] = mg1;
             mga.Gifts[i] = mg2;
         }
         SetBackground(i, Drawing.PokeSprite.Properties.Resources.slotDel);
@@ -267,7 +278,7 @@ public partial class SAV_Wondercard : Form
 
     private void B_Save_Click(object sender, EventArgs e)
     {
-        // Make sure all of the Received Flags are flipped!
+        // Store the list of set flag indexes back to the bitflag array.
         bool[] flags = new bool[mga.Flags.Length];
         foreach (var o in LB_Received.Items)
         {
@@ -441,7 +452,7 @@ public partial class SAV_Wondercard : Form
         string newfile = Path.Combine(Path.GetTempPath(), Util.CleanFileName(gift.FileName));
         try
         {
-            File.WriteAllBytes(newfile, gift.Write());
+            await File.WriteAllBytesAsync(newfile, gift.Write()).ConfigureAwait(true);
             DoDragDrop(new DataObject(DataFormats.FileDrop, new[] { newfile }), DragDropEffects.Copy | DragDropEffects.Move);
         }
         // Sometimes the drag-drop is canceled or ends up at a bad location. Don't bother recovering from an exception; just display a safe error message.
@@ -477,7 +488,7 @@ public partial class SAV_Wondercard : Form
 
         if (wc_slot == -1) // dropped
         {
-            if (e?.Data?.GetData(DataFormats.FileDrop) is not string[] {Length: not 0} files)
+            if (e?.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: not 0 } files)
                 return;
 
             var first = files[0];
@@ -582,7 +593,7 @@ public partial class SAV_Wondercard : Form
     // UI Generation
     private List<PictureBox> PopulateViewGiftsG4()
     {
-        List<PictureBox> pb = new();
+        List<PictureBox> pb = [];
         var spriter = SpriteUtil.Spriter;
 
         // Row 1
@@ -590,7 +601,7 @@ public partial class SAV_Wondercard : Form
         f1.Controls.Add(GetLabel($"{nameof(PGT)} 1-6"));
         for (int i = 0; i < 6; i++)
         {
-            var p = GetPictureBox(spriter.Width, spriter.Height);
+            var p = GetPictureBox(spriter.Width, spriter.Height, $"PGT {i + 1}");
             f1.Controls.Add(p);
             pb.Add(p);
         }
@@ -599,7 +610,7 @@ public partial class SAV_Wondercard : Form
         f2.Controls.Add(GetLabel($"{nameof(PGT)} 7-8"));
         for (int i = 6; i < 8; i++)
         {
-            var p = GetPictureBox(spriter.Width, spriter.Height);
+            var p = GetPictureBox(spriter.Width, spriter.Height, $"PGT {i + 1}");
             f2.Controls.Add(p);
             pb.Add(p);
         }
@@ -609,7 +620,7 @@ public partial class SAV_Wondercard : Form
         f3.Controls.Add(GetLabel($"{nameof(PCD)} 1-3"));
         for (int i = 8; i < 11; i++)
         {
-            var p = GetPictureBox(spriter.Width, spriter.Height);
+            var p = GetPictureBox(spriter.Width, spriter.Height, $"PCD {i - 7}");
             f3.Controls.Add(p);
             pb.Add(p);
         }
@@ -624,7 +635,7 @@ public partial class SAV_Wondercard : Form
             var f4 = GetFlowLayoutPanel();
             f4.Controls.Add(GetLabel(GameInfo.Strings.Item[533])); // Lock Capsule
             {
-                var p = GetPictureBox(spriter.Width, spriter.Height);
+                var p = GetPictureBox(spriter.Width, spriter.Height, "PCD Lock Capsule");
                 f4.Controls.Add(p);
                 pb.Add(p);
             }
@@ -635,7 +646,7 @@ public partial class SAV_Wondercard : Form
 
     private List<PictureBox> PopulateViewGiftsG567()
     {
-        var pb = new List<PictureBox>();
+        List<PictureBox> pb = [];
 
         const int cellsPerRow = 6;
         int rows = (int)Math.Ceiling(mga.Gifts.Length / (decimal)cellsPerRow);
@@ -651,7 +662,7 @@ public partial class SAV_Wondercard : Form
             row.Controls.Add(GetLabel($"{start}-{start + count - 1}"));
             for (int j = 0; j < count; j++)
             {
-                var p = GetPictureBox(spriter.Width, spriter.Height);
+                var p = GetPictureBox(spriter.Width, spriter.Height, $"Row {i} Slot {start + j}");
                 row.Controls.Add(p);
                 pb.Add(p);
             }
@@ -678,7 +689,7 @@ public partial class SAV_Wondercard : Form
         Margin = new Padding(0),
     };
 
-    private static PictureBox GetPictureBox(int width, int height) => new()
+    private static SelectablePictureBox GetPictureBox(int width, int height, string name) => new()
     {
         Size = new Size(width + 2, height + 2), // +1 to each side for the FixedSingle border
         SizeMode = PictureBoxSizeMode.CenterImage,
@@ -686,6 +697,9 @@ public partial class SAV_Wondercard : Form
         BackColor = SlotUtil.GoodDataColor,
         Padding = new Padding(0),
         Margin = new Padding(1),
+        Name = name,
+        AccessibleName = name,
+        AccessibleRole = AccessibleRole.Graphic,
     };
 
     private void B_ModifyAll_Click(object sender, EventArgs e)

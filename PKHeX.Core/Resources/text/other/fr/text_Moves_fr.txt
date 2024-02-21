@@ -873,8 +873,8 @@ Chant Flamboyant
 Danse Aquatique
 Taurogne
 Ruée d’Or
-WAZA_SAIKOBUREIDO
-WAZA_HAIDOROSUTIIMU
+Lame Psychique
+Hydrovapeur
 Cataclysme
 Nitro Crash
 Turbo Volt
@@ -899,3 +899,22 @@ Crash Obscur
 Crash Toxique
 Crash Musclé
 Crash Magique
+Lune Rouge
+Mortier Matcha
+Bombe au Sirop
+Massue Liane
+Fulgurayon
+Pluie Térastrale
+Laser Hasard
+Rempart Brûlant
+Vif Éclair
+Lame Puissante
+Lame Tachyonique
+Pression Extrême
+Cri Draconique
+Voix Envoûtante
+Indignition
+Volt Assaut
+Dissonance Psy
+Prio-Parade
+Chaîne Malsaine

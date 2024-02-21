@@ -13,8 +13,8 @@ public sealed class LearnSource2C : ILearnSource<PersonalInfo2>, IEggSource
 {
     public static readonly LearnSource2C Instance = new();
     private static readonly PersonalTable2 Personal = PersonalTable.C;
-    private static readonly EggMoves2[] EggMoves = Legal.EggMovesC;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpC;
+    private static readonly EggMoves2[] EggMoves = EggMoves2.GetArray(Util.GetBinaryResource("eggmove_c.pkl"), Legal.MaxSpeciesID_2);
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(Util.GetBinaryResource("lvlmove_c.pkl"), Legal.MaxSpeciesID_2);
     private const int MaxSpecies = Legal.MaxSpeciesID_2;
     private const LearnEnvironment Game = C;
 
@@ -42,7 +42,7 @@ public sealed class LearnSource2C : ILearnSource<PersonalInfo2>, IEggSource
     public ReadOnlySpan<ushort> GetEggMoves(ushort species, byte form)
     {
         if (species > MaxSpecies)
-            return ReadOnlySpan<ushort>.Empty;
+            return [];
         return EggMoves[species].Moves;
     }
 
@@ -61,7 +61,7 @@ public sealed class LearnSource2C : ILearnSource<PersonalInfo2>, IEggSource
         {
             var learn = GetLearnset(evo.Species, evo.Form);
             var level = learn.GetLevelLearnMove(move);
-            if (level != -1 && evo.LevelMin <= level && level <= evo.LevelMax)
+            if (level != -1 && evo.InsideLevelRange(level))
                 return new(LevelUp, Game, (byte)level);
         }
 
@@ -97,16 +97,11 @@ public sealed class LearnSource2C : ILearnSource<PersonalInfo2>, IEggSource
         {
             var learn = GetLearnset(evo.Species, evo.Form);
             var min = ParseSettings.AllowGen2MoveReminder(pk) ? 1 : evo.LevelMin;
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(evo.LevelMax, min);
-            if (hasMoves)
+            var span = learn.GetMoveRange(evo.LevelMax, min);
+            foreach (var move in span)
             {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                {
-                    var move = moves[i];
-                    if (!removeVC || move <= Legal.MaxMoveID_1)
-                        result[move] = true;
-                }
+                if (!removeVC || move <= Legal.MaxMoveID_1)
+                    result[move] = true;
             }
         }
 
@@ -117,10 +112,13 @@ public sealed class LearnSource2C : ILearnSource<PersonalInfo2>, IEggSource
             pi.SetAllLearnTutorType(result, Tutors_GSC);
     }
 
-    public static void GetEncounterMoves(IEncounterTemplate enc, Span<ushort> init)
+    public static void GetEncounterMoves(PKM pk, IEncounterTemplate enc, Span<ushort> init)
     {
         var species = enc.Species;
         var learn = Learnsets[species];
-        learn.SetEncounterMoves(enc.LevelMin, init);
+        var level = enc.LevelMin;
+        if (pk is ICaughtData2 { CaughtData: not 0 })
+            level = Math.Max(level, (byte)pk.Met_Level); // ensure the met level is somewhat accurate
+        learn.SetEncounterMoves(level, init);
     }
 }

@@ -11,7 +11,7 @@ public sealed record LocationSet6(string[] Met0, string[] Met3, string[] Met4, s
         3 => Met3,
         4 => Met4,
         6 => Met6,
-        _ => Array.Empty<string>(),
+        _ => [],
     };
 
     public string GetLocationName(int locationID) => locationID switch
@@ -29,7 +29,7 @@ public sealed record LocationSet6(string[] Met0, string[] Met3, string[] Met4, s
         return names[index];
     }
 
-    public IEnumerable<(int Bank, string[] Names)> GetAll()
+    public IEnumerable<(int Bank, ReadOnlyMemory<string> Names)> GetAll()
     {
         yield return (0, Met0);
         yield return (3, Met3);

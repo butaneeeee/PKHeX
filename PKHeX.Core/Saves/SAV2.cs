@@ -17,9 +17,10 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
     public string SaveRevisionString => (Japanese ? "J" : !Korean ? "U" : "K") + (IsVirtualConsole ? "VC" : "GB");
     public bool Japanese { get; }
     public bool Korean { get; }
+    public override int Language => Japanese ? 1 : Korean ? (int)LanguageID.Korean : -1;
 
     public override PersonalTable2 Personal { get; }
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_GSC;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_GSC;
 
     public override IReadOnlyList<string> PKMExtensions => Array.FindAll(PKM.Extensions, f =>
     {
@@ -74,7 +75,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         for (int i = 0; i < BoxCount; i++)
         {
             int ofs = GetBoxRawDataOffset(i, splitAtIndex);
-            var box = GetData(ofs, stored);
+            var box = Data.AsSpan(ofs, stored).ToArray();
             var boxDest = baseDest + (i * SIZE_BOX);
             var boxPL = new PokeList2(box, capacity, Japanese);
             for (int j = 0; j < boxPL.Pokemon.Length; j++)
@@ -87,7 +88,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
             }
         }
 
-        var current = GetData(Offsets.CurrentBox, stored);
+        var current = Data.AsSpan(Offsets.CurrentBox, stored).ToArray();
         var curBoxPL = new PokeList2(current, capacity, Japanese);
         var curDest = baseDest + (CurrentBox * SIZE_BOX);
         for (int i = 0; i < curBoxPL.Pokemon.Length; i++)
@@ -99,7 +100,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
             pkDat.CopyTo(Data, dest);
         }
 
-        var party = GetData(Offsets.Party, SIZE_STOREDPARTY);
+        var party = Data.AsSpan(Offsets.Party, SIZE_STOREDPARTY).ToArray();
         var partyPL = new PokeList2(party, PokeListType.Party, Japanese);
         for (int i = 0; i < partyPL.Pokemon.Length; i++)
         {
@@ -155,8 +156,8 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
 
         var nick = span[..stringLength];
         var ot = span.Slice(stringLength, stringLength);
-        nick.CopyTo(pk.RawNickname);
-        ot.CopyTo(pk.RawOT);
+        nick.CopyTo(pk.Nickname_Trash);
+        ot.CopyTo(pk.OT_Trash);
 
         return pk;
     }
@@ -180,7 +181,9 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
             int slot = 0;
             for (int j = 0; j < boxPL.Pokemon.Length; j++)
             {
-                PK2 boxPK = GetPKM(GetData(GetBoxOffset(i) + (j * SIZE_STORED), SIZE_STORED));
+                var ofs = GetBoxOffset(i) + (j * SIZE_STORED);
+                var data = Data.AsSpan(ofs, SIZE_STORED).ToArray();
+                PK2 boxPK = GetPKM(data);
                 if (boxPK.Species > 0)
                     boxPL[slot++] = boxPK;
             }
@@ -195,7 +198,9 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         int pSlot = 0;
         for (int i = 0; i < 6; i++)
         {
-            PK2 partyPK = GetPKM(GetData(GetPartyOffset(i), SIZE_STORED));
+            var ofs = GetPartyOffset(i);
+            var data = Data.AsSpan(ofs, SIZE_STORED).ToArray();
+            PK2 partyPK = GetPKM(data);
             if (partyPK.Species > 0)
                 partyPL[pSlot++] = partyPK;
         }
@@ -214,14 +219,14 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         {
             // Calculate oddball checksum
             ushort sum = 0;
-            Span<(ushort, ushort)> offsetpairs = stackalloc (ushort,ushort)[]
-            {
+            Span<(ushort, ushort)> offsetpairs =
+            [
                 (0x106B, 0x1533),
                 (0x1534, 0x1A12),
                 (0x1A13, 0x1C38),
                 (0x3DD8, 0x3F79),
                 (0x7E39, 0x7E6A),
-            };
+            ];
             foreach (var p in offsetpairs)
             {
                 for (int i = p.Item1; i < p.Item2; i++)
@@ -275,7 +280,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
     public int EventFlagCount => 2000;
 
     public override int BoxCount => Japanese ? 9 : 14;
-    public override int MaxEV => 65535;
+    public override int MaxEV => EffortValues.Max12;
     public override int MaxIV => 15;
     public override int Generation => 2;
     public override EntityContext Context => EntityContext.Gen2;
@@ -304,24 +309,29 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         WriteUInt16LittleEndian(Data.AsSpan(Offsets.OverallChecksumPosition2), accum);
     }
 
-    public override bool ChecksumsValid
+    public override bool ChecksumsValid => !ChecksumInfo.Contains("Invalid");
+
+    public override string ChecksumInfo
     {
         get
         {
             ushort accum = GetChecksum();
             ushort actual = ReadUInt16LittleEndian(Data.AsSpan(Offsets.OverallChecksumPosition));
-            return accum == actual;
+            ushort actual2 = ReadUInt16LittleEndian(Data.AsSpan(Offsets.OverallChecksumPosition2));
+
+            bool checksum1Valid = (accum == actual);
+            bool checksum2Valid = (accum == actual2);
+            static string valid(bool s) => s ? "Valid" : "Invalid";
+            return $"Checksum 1 {valid(checksum1Valid)}, Checksum 2 {valid(checksum2Valid)}.";
         }
     }
-
-    public override string ChecksumInfo => ChecksumsValid ? "Checksum valid." : "Checksum invalid";
 
     // Trainer Info
     public override GameVersion Version { get; protected set; }
 
     public override string OT
     {
-        get => GetString(Offsets.Trainer1 + 2, (Korean ? 2 : 1) * MaxStringLengthOT);
+        get => GetString(Data.AsSpan(Offsets.Trainer1 + 2, (Korean ? 2 : 1) * MaxStringLengthOT));
         set => SetString(Data.AsSpan(Offsets.Trainer1 + 2, (Korean ? 2 : 1) * MaxStringLengthOT), value, 8, StringConverterOption.Clear50);
     }
 
@@ -333,7 +343,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
 
     public string Rival
     {
-        get => GetString(Offsets.Rival, (Korean ? 2 : 1) * MaxStringLengthOT);
+        get => GetString(Data.AsSpan(Offsets.Rival, (Korean ? 2 : 1) * MaxStringLengthOT));
         set => SetString(Data.AsSpan(Offsets.Rival, (Korean ? 2 : 1) * MaxStringLengthOT), value, 8, StringConverterOption.Clear50);
     }
 
@@ -497,23 +507,61 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         }
     }
 
-    private static ushort[] LegalItems => Legal.Pouch_Items_GSC;
-    private ushort[] LegalKeyItems => Version == GameVersion.C? Legal.Pouch_Key_C : Legal.Pouch_Key_GS;
-    private static ushort[] LegalBalls => Legal.Pouch_Ball_GSC;
-    private static ushort[] LegalTMHMs => Legal.Pouch_TMHM_GSC;
+    public byte MysteryGiftItem
+    {
+        get
+        {
+            int ofs = Offsets.MysteryGiftItem;
+            if (ofs == -1)
+                return 0;
+            if (GetEventFlag(1809))
+                return 0;
+            return Data[ofs];
+        }
+        set
+        {
+            int ofs = Offsets.MysteryGiftItem;
+            if (ofs == -1)
+                return;
+
+            SetEventFlag(1809, value == 0);
+            Data[ofs] = value;
+        }
+    }
+
+    public bool MysteryGiftIsUnlocked
+    {
+        get
+        {
+            int ofs = Offsets.MysteryGiftIsUnlocked;
+            if (ofs == -1)
+                return false;
+            return Data[ofs] == 0x00;
+        }
+        set
+        {
+            int ofs = Offsets.MysteryGiftIsUnlocked;
+            if (ofs == -1)
+                return;
+
+            Data[ofs] = (byte)(value ? 0x00 : 0xFF);
+            Data[ofs + 2] = Data[ofs];
+        }
+    }
 
     public override IReadOnlyList<InventoryPouch> Inventory
     {
         get
         {
+            var info = Version == GameVersion.C ? ItemStorage2.InstanceC : ItemStorage2.InstanceGS;
             InventoryPouch[] pouch =
-            {
-                new InventoryPouchGB(InventoryType.TMHMs, LegalTMHMs, 99, Offsets.PouchTMHM, 57),
-                new InventoryPouchGB(InventoryType.Items, LegalItems, 99, Offsets.PouchItem, 20),
-                new InventoryPouchGB(InventoryType.KeyItems, LegalKeyItems, 99, Offsets.PouchKey, 26),
-                new InventoryPouchGB(InventoryType.Balls, LegalBalls, 99, Offsets.PouchBall, 12),
-                new InventoryPouchGB(InventoryType.PCItems, ArrayUtil.ConcatAll(LegalItems, LegalKeyItems, LegalBalls, LegalTMHMs), 99, Offsets.PouchPC, 50),
-            };
+            [
+                new InventoryPouchGB(InventoryType.TMHMs, info, 99, Offsets.PouchTMHM, 57),
+                new InventoryPouchGB(InventoryType.Items, info, 99, Offsets.PouchItem, 20),
+                new InventoryPouchGB(InventoryType.KeyItems, info, 99, Offsets.PouchKey, 26),
+                new InventoryPouchGB(InventoryType.Balls, info, 99, Offsets.PouchBall, 12),
+                new InventoryPouchGB(InventoryType.PCItems, info, 99, Offsets.PouchPC, 50),
+            ];
             return pouch.LoadAll(Data);
         }
         set => value.SaveAll(Data);
@@ -554,16 +602,17 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
         set => Data[Offsets.CurrentBoxIndex] = (byte)((Data[Offsets.CurrentBoxIndex] & 0x7F) | (byte)(value ? 0x80 : 0));
     }
 
-    public override string GetBoxName(int box)
+    public override string GetBoxName(int box) => GetString(GetBoxNameSpan(box));
+
+    private Span<byte> GetBoxNameSpan(int box)
     {
         int len = Korean ? 17 : 9;
-        return GetString(Offsets.BoxNames + (box * len), len);
+        return Data.AsSpan(Offsets.BoxNames + (box * len), len);
     }
 
     public override void SetBoxName(int box, ReadOnlySpan<char> value)
     {
-        int len = Korean ? 17 : 9;
-        var span = Data.AsSpan(Offsets.BoxNames + (box * len), len);
+        var span = GetBoxNameSpan(box);
         SetString(span, value, 8, StringConverterOption.Clear50);
     }
 
@@ -594,7 +643,7 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
 
     private void SetUnownFormFlags()
     {
-        // Give all Unown caught to prevent a crash on pokedex view
+        // Give all Unown caught to prevent a crash on Pokédex view
         for (int i = 1; i <= 26; i++)
             Data[Offsets.PokedexSeen + 0x1F + i] = (byte)i;
         if (UnownFirstSeen == 0) // Invalid
@@ -713,16 +762,16 @@ public sealed class SAV2 : SaveFile, ILangDeviantSave, IEventFlagArray, IEventWo
 
     private ushort GetResetKey()
     {
-        var value = (TID16 >> 8) + (TID16 & 0xFF) + ((Money >> 16) & 0xFF) + ((Money >> 8) & 0xFF) + (Money & 0xFF);
-        var ot = Data.AsSpan(Offsets.Trainer1 + 2, 5);
-        var sum = 0;
-        foreach (var b in ot)
-        {
-            if (b == StringConverter12.G1TerminatorCode)
-                break;
-            sum += b;
-        }
-        return (ushort)(value + sum);
+        ushort result = 0;
+        foreach (var b in Data.AsSpan(Offsets.Money, 3))
+            result += b;
+        var tr = Data.AsSpan(Offsets.Trainer1, 7);
+        var end = tr[2..].IndexOf(StringConverter12.G1TerminatorCode);
+        if (end >= 0)
+            tr = tr[..(end + 2)];
+        foreach (var b in tr)
+            result += b;
+        return result;
     }
 
     /// <summary>

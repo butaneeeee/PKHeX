@@ -1,13 +1,14 @@
+using System;
+
 namespace PKHeX.Core;
 
-public sealed class WormholeInfoReader
+public sealed class WormholeInfoReader(SAV7 SAV)
 {
-    public readonly SAV7 SAV;
-    public WormholeInfoReader(SAV7 sav) => SAV = sav;
+    public readonly SAV7 SAV = SAV;
 
     // Wormhole shininess & flags found by @PP-theSLAYER
     // https://projectpokemon.org/home/forums/topic/39433-gen-7-save-research-thread/?page=3&tab=comments#comment-239090
-    public bool WormholeShininess // 0x4535 = Misc (0x4400 in USUM) + 0x0135
+    public bool WormholeShininess // 0x4535 = Misc (0x4400 in US/UM) + 0x0135
     {
         get => SAV.Data[SAV.Misc.Offset + 0x0135] == 1;
         set => SAV.Data[SAV.Misc.Offset + 0x0135] = value ? (byte)1 : (byte)0;
@@ -37,16 +38,16 @@ public sealed class WormholeInfoReader
         }
     }
 
-    public static readonly ushort[] StandardWormholes =
-    {
+    public static ReadOnlySpan<ushort> StandardWormholes =>
+    [
         256, // Red
         257, // Green
         258, // Yellow
         259, // Blue
-    };
+    ];
 
-    public static readonly ushort[] WormholeSlotsRed =
-    {
+    public static ReadOnlySpan<ushort> WormholeSlotsRed =>
+    [
         0, // filler used for indexing with slot number
         144, // Articuno
         145, // Zapdos
@@ -63,10 +64,10 @@ public sealed class WormholeInfoReader
         561, // Sigilyph
         581, // Swanna
         277, // Swellow
-    };
+    ];
 
-    public static readonly ushort[] WormholeSlotsGreen =
-    {
+    public static ReadOnlySpan<ushort> WormholeSlotsGreen =>
+    [
         0, // filler used for indexing with slot number
         150, // Mewtwo
         243, // Raikou
@@ -83,10 +84,10 @@ public sealed class WormholeInfoReader
         695, // Heliolisk
         274, // Nuzleaf
         326, // Grumpig
-    };
+    ];
 
-    public static readonly ushort[] WormholeSlotsYellow =
-    {
+    public static ReadOnlySpan<ushort> WormholeSlotsYellow =>
+    [
         0, // filler used for indexing with slot number
         377, // Regirock
         378, // Regice
@@ -103,10 +104,10 @@ public sealed class WormholeInfoReader
         450, // Hippowdon
         558, // Crustle
         219, // Magcargo
-    };
+    ];
 
-    public static readonly ushort[] WormholeSlotsBlue =
-    {
+    public static ReadOnlySpan<ushort> WormholeSlotsBlue =>
+    [
         0, // filler used for indexing with slot number
         245, // Suicune
         249, // Lugia
@@ -123,7 +124,7 @@ public sealed class WormholeInfoReader
         618, // Stunfisk
         419, // Floatzel
         195, // Quagsire
-    };
+    ];
 
     public static ushort WormholeSlotToPokemon(int mapid, int slot)
     {

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PKHeX.Core;
 
 /// <summary>
 /// Bindable summary object that can fetch strings that summarize a <see cref="PKM"/>.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]
 public class EntitySummary : IFatefulEncounterReadOnly // do NOT seal, allow inheritance
 {
     private static readonly IReadOnlyList<string> GenderSymbols = GameInfo.GenderSymbolASCII;
@@ -64,7 +66,6 @@ public class EntitySummary : IFatefulEncounterReadOnly // do NOT seal, allow inh
     public int Smart => pk is IContestStatsReadOnly s ? s.CNT_Smart : 0;
     public int Tough => pk is IContestStatsReadOnly s ? s.CNT_Tough : 0;
     public int Sheen => pk is IContestStatsReadOnly s ? s.CNT_Sheen : 0;
-    public int Markings => pk.MarkValue;
 
     public string NotOT => pk.Format > 5 ? pk.HT_Name : "N/A";
 

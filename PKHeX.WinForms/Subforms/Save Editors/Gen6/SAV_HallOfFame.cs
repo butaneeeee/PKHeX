@@ -28,7 +28,7 @@ public partial class SAV_HallOfFame : Form
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
         SAV = (SAV6)(Origin = sav).Clone();
 
-        data = SAV.Data.Slice(SAV.HoF, StructureTotal); // Copy HoF section of save into Data
+        data = SAV.Data.AsSpan(SAV.HoF, StructureTotal).ToArray(); // Copy HoF section of save into Data
         Setup();
         LB_DataEntry.SelectedIndex = 0;
         NUP_PartyIndex_ValueChanged(this, EventArgs.Empty);
@@ -83,7 +83,7 @@ public partial class SAV_HallOfFame : Form
         uint vnd = ReadUInt32LittleEndian(data.AsSpan(offset + 0x1B0));
         uint vn = vnd & 0xFF;
         TB_VN.Text = vn.ToString("000");
-        var s = new List<string> {$"Entry #{vn}"};
+        var s = new List<string> { $"Entry #{vn}" };
         uint date = (vnd >> 14) & 0x1FFFF;
         uint month = (date >> 8) & 0xF;
         uint year = (date & 0xFF) + 2000;
@@ -113,7 +113,7 @@ public partial class SAV_HallOfFame : Form
             }
         }
 
-        RTB.Lines = s.ToArray();
+        RTB.Lines = [.. s];
         RTB.Font = new Font("Courier New", 8);
     }
 
@@ -163,7 +163,7 @@ public partial class SAV_HallOfFame : Form
     {
         editing = false;
         int index = LB_DataEntry.SelectedIndex;
-        int offset = (index * StructureSize) + ((Convert.ToInt32(NUP_PartyIndex.Value)-1) * HallFame6Entity.SIZE);
+        int offset = (index * StructureSize) + ((Convert.ToInt32(NUP_PartyIndex.Value) - 1) * HallFame6Entity.SIZE);
 
         if (offset < 0)
             return;
@@ -250,10 +250,10 @@ public partial class SAV_HallOfFame : Form
 
     private void Validate_TextBoxes()
     {
-        TB_Level.Text = Math.Min(Util.ToInt32(TB_Level.Text), 100).ToString();
-        TB_VN.Text = Math.Min(Util.ToInt32(TB_VN.Text), byte.MaxValue).ToString();
-        TB_TID.Text = Math.Min(Util.ToInt32(TB_TID.Text), ushort.MaxValue).ToString();
-        TB_SID.Text = Math.Min(Util.ToInt32(TB_SID.Text), ushort.MaxValue).ToString();
+        TB_Level.Text = Math.Min(Util.ToInt32(TB_Level.Text), 100).ToString("000");
+        TB_VN.Text = Math.Min(Util.ToInt32(TB_VN.Text), byte.MaxValue).ToString("000");
+        TB_TID.Text = Math.Min(Util.ToInt32(TB_TID.Text), ushort.MaxValue).ToString("00000");
+        TB_SID.Text = Math.Min(Util.ToInt32(TB_SID.Text), ushort.MaxValue).ToString("00000");
     }
 
     private void UpdateNickname(object sender, EventArgs e)

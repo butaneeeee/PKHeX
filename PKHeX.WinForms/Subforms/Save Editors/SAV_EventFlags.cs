@@ -11,8 +11,8 @@ namespace PKHeX.WinForms;
 public sealed partial class SAV_EventFlags : Form
 {
     private readonly EventWorkspace<IEventFlag37, ushort> Editor;
-    private readonly Dictionary<int, NumericUpDown> WorkDict = new();
-    private readonly Dictionary<int, int> FlagDict = new();
+    private readonly Dictionary<int, NumericUpDown> WorkDict = [];
+    private readonly Dictionary<int, int> FlagDict = [];
 
     private bool editing;
 
@@ -195,7 +195,7 @@ public sealed partial class SAV_EventFlags : Form
                     return;
 
                 updating = true;
-                var value = (ushort) mtb.Value;
+                var value = (ushort)mtb.Value;
                 var (_, valueID) = map.Find(z => z.Value == value) ?? map[0];
                 if (WinFormsUtil.GetIndex(cb) != valueID)
                     cb.SelectedValue = valueID;
@@ -230,7 +230,7 @@ public sealed partial class SAV_EventFlags : Form
         if (editing)
             return;
         editing = true;
-        var index = (int) NUD_Flag.Value;
+        var index = (int)NUD_Flag.Value;
         Editor.Flags[index] = c_CustomFlag.Checked;
         if (FlagDict.TryGetValue(index, out var rowIndex))
             dgv.Rows[rowIndex].Cells[0].Value = c_CustomFlag.Checked;

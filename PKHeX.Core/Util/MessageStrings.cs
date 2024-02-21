@@ -48,6 +48,8 @@ public static class MessageStrings
     #region Main Window
 
     public static string MsgFileLoad { get; set; } = "File Loaded:";
+    public static string MsgFileLoadAllZero { get; set; } = "File is uninitialized (all zero). Please ensure it was properly saved.";
+    public static string MsgFileLoadAllFFFF { get; set; } = "File is uninitialized (all 0xFF). Please ensure it was properly saved.";
     public static string MsgFileLoadFail { get; set; } = "Unable to load file.";
     public static string MsgFileLoadFailAuto { get; set; } = "An error occurred while attempting to auto-load your save file.";
     public static string MsgFileLoadFailAutoAdvise { get; set; } = "It is advised to manually remove bad filenames from the folder.";
@@ -68,6 +70,7 @@ public static class MessageStrings
     public static string MsgFileGameCubeNoGames { get; set; } = "GC Memory Card without any Pokémon save file. Aborting.";
 
     public static string MsgFileSize { get; set; } = "File Size: {0} bytes";
+    public static string MsgFileSizeIncorrect { get; set; } = "Input file size ({0} bytes) does not match expected size ({1} bytes).";
     public static string MsgFileSizeLarge { get; set; } = "Input file is too large.";
     public static string MsgFileSizeSmall { get; set; } = "Input file is too small.";
     public static string MsgFileWriteFail { get; set; } = "Unable to save file.";
@@ -189,6 +192,8 @@ public static class MessageStrings
     public static string MsgSaveGen2RTCResetPassword { get; set; } = "RTC Reset Password: {0:00000}";
     public static string MsgSaveGen2RTCResetBitflag { get; set; } = "Would you like to reset the RTC?";
     public static string MsgSaveJPEGExportFail { get; set; } = "No picture data found in the save file!";
+    public static string MsgSaveGen4ConvertKorean { get; set; } = "Would you like to convert this Japanese/International save file to be playable with Korean games?";
+    public static string MsgSaveGen4ConvertInternational { get; set; } = "Would you like to convert this Korean save file to be playable with Japanese/International games?";
 
     public static string MsgSaveChecksumFailEdited { get; set; } = "Save has been edited. Cannot integrity check.";
     public static string MsgSaveChecksumValid { get; set; } = "Checksums are valid.";
@@ -318,7 +323,6 @@ public static class MessageStrings
     #endregion
 
     #region Misc
-
     public static string MsgSaveDifferentTypes { get; set; } = "Save File types are different.";
     public static string MsgSaveDifferentVersions { get; set; } = "Save File versions are not the same.";
     public static string MsgSaveNumberInvalid { get; set; } = "Save File {0} is not valid.";

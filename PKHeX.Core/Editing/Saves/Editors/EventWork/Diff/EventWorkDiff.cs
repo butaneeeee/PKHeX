@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using static PKHeX.Core.EventWorkDiffCompatibility;
@@ -9,12 +9,12 @@ namespace PKHeX.Core;
 /// <summary>
 /// Calculates differences in the Event Blocks between two <see cref="SaveFile"/>.
 /// </summary>
-public sealed class EventBlockDiff<T, T2> : IEventWorkDiff where T : IEventFlagArray, IEventWorkArray<T2> where T2 : unmanaged, IEquatable<T2>
+public sealed class EventBlockDiff<T, T2> : IEventWorkDiff where T : class, IEventFlagArray, IEventWorkArray<T2> where T2 : unmanaged, IEquatable<T2>
 {
-    public List<int> SetFlags { get; } = new();
-    public List<int> ClearedFlags { get; } = new();
-    public List<int> WorkChanged { get; } = new();
-    public List<string> WorkDiff { get; } = new();
+    public List<int> SetFlags { get; } = [];
+    public List<int> ClearedFlags { get; } = [];
+    public List<int> WorkChanged { get; } = [];
+    public List<string> WorkDiff { get; } = [];
     public EventWorkDiffCompatibility Message { get; private set; }
 
     private const int MAX_SAVEFILE_SIZE = 0x10_0000; // 1 MB

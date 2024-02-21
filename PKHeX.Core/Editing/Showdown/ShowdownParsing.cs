@@ -9,7 +9,7 @@ namespace PKHeX.Core;
 /// </summary>
 public static class ShowdownParsing
 {
-    private static readonly string[] genderForms = { "", "F", "" };
+    private static readonly string[] genderForms = ["", "F", ""];
 
     /// <summary>
     /// Gets the Form ID from the input <see cref="name"/>.
@@ -19,7 +19,7 @@ public static class ShowdownParsing
     /// <param name="species">Species ID the form belongs to</param>
     /// <param name="context">Format the form name should appear in</param>
     /// <returns>Zero (base form) if no form matches the input string.</returns>
-    public static byte GetFormFromString(string name, GameStrings strings, ushort species, EntityContext context)
+    public static byte GetFormFromString(ReadOnlySpan<char> name, GameStrings strings, ushort species, EntityContext context)
     {
         if (name.Length == 0)
             return 0;
@@ -28,17 +28,34 @@ public static class ShowdownParsing
         if (forms.Length < 1)
             return 0;
 
-        // Find first matching index that matches any case.
+        // Find first matching index that matches any case, ignoring dashes interchanged with spaces.
         for (byte i = 0; i < forms.Length; i++)
         {
-            var form = forms[i];
-            var index = form.IndexOf(name, StringComparison.OrdinalIgnoreCase);
-            if (index != -1)
+            if (IsFormEquivalent(forms[i], name))
                 return i;
         }
 
         // No match, assume default 0 form.
         return 0;
+    }
+
+    private static bool IsFormEquivalent(ReadOnlySpan<char> reference, ReadOnlySpan<char> input)
+    {
+        if (input.Length != reference.Length)
+            return false;
+
+        for (int i = 0; i < input.Length; i++)
+        {
+            var c1 = input[i];
+            var c2 = reference[i];
+            if (char.ToUpperInvariant(c1) == char.ToUpperInvariant(c2))
+                continue;
+            if (c1 is ' ' or '-' && c2 is ' ' or '-')
+                continue;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -87,10 +104,10 @@ public static class ShowdownParsing
             (int)Polteageist or (int)Sinistea           => form == "Antique" ? form : string.Empty,
             (int)Maushold when form is "Family of Four" => "Four",
 
-            (int)Furfrou or (int)Greninja or (int)Rockruff or (int)Koraidon or (int)Miraidon => string.Empty,
+            (int)Greninja or (int)Rockruff or (int)Koraidon or (int)Miraidon => string.Empty,
 
-            _ => Legal.Totem_USUM.Contains(species) && form == "Large"
-                ? Legal.Totem_Alolan.Contains(species) && species != (int)Mimikyu ? "Alola-Totem" : "Totem"
+            _ => FormInfo.HasTotemForm(species) && form == "Large"
+                ? species is (int)Raticate or (int)Marowak ? "Alola-Totem" : "Totem"
                 : form.Replace(' ', '-'),
         };
     }
@@ -108,21 +125,21 @@ public static class ShowdownParsing
 
         return species switch
         {
-            (int)Basculin   when form == "Blue-Striped" => "Blue",
-            (int)Vivillon   when form == "Pokeball"     => "Poké Ball",
-            (int)Necrozma   when form == "Dusk-Mane"    => "Dusk",
-            (int)Necrozma   when form == "Dawn-Wings"   => "Dawn",
-            (int)Toxtricity when form == "Low-Key"      => "Low Key",
-            (int)Darmanitan when form == "Galar-Zen"    => "Galar Zen",
-            (int)Minior     when form != MiniorFormName => $"C-{form}",
-            (int)Zygarde    when form == "Complete"     => form,
+            (int)Basculin   when form is "Blue-Striped" => "Blue",
+            (int)Vivillon   when form is "Pokeball"     => "Poké Ball",
+            (int)Necrozma   when form is "Dusk-Mane"    => "Dusk",
+            (int)Necrozma   when form is "Dawn-Wings"   => "Dawn",
+            (int)Toxtricity when form is "Low-Key"      => "Low Key",
+            (int)Darmanitan when form is "Galar-Zen"    => "Galar Zen",
+            (int)Minior     when form is not MiniorFormName => $"C-{form}",
+            (int)Zygarde    when form is "Complete"     => form,
             (int)Zygarde    when ability == 211         => $"{(string.IsNullOrWhiteSpace(form) ? "50%" : "10%")}-C",
             (int)Greninja   when ability == 210         => "Ash", // Battle Bond
             (int)Rockruff   when ability == 020         => "Dusk", // Rockruff-1
-            (int)Maushold   when form == "Four"         => "Family of Four",
+            (int)Maushold   when form is "Four"         => "Family of Four",
             (int)Urshifu or (int)Pikachu or (int)Alcremie => form.Replace('-', ' '), // Strike and Cosplay
 
-            _ => Legal.Totem_USUM.Contains(species) && form.EndsWith("Totem", StringComparison.OrdinalIgnoreCase) ? "Large" : form,
+            _ => FormInfo.HasTotemForm(species) && form.EndsWith("Totem", StringComparison.OrdinalIgnoreCase) ? "Large" : form,
         };
     }
 
@@ -176,7 +193,7 @@ public static class ShowdownParsing
     {
         // Find the end of the Showdown Set lines.
         // The end is implied when:
-        // - we see a completely whitespace or empty line, or
+        // - we see a complete whitespace or empty line, or
         // - we witness four 'move' definition lines.
         int length = 0;
         int moveCount = 4;

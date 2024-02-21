@@ -72,11 +72,19 @@ public static class SlotRange
         };
     }
 
-    public static int GetLevel(EncounterSlot slot, LeadRequired lead, uint lvlrand)
+    /// <summary>
+    /// Calculates the level for the given slot.
+    /// </summary>
+    /// <typeparam name="T">Slot type</typeparam>
+    /// <param name="slot">Slot reference</param>
+    /// <param name="lead">Player's lead Pokémon</param>
+    /// <param name="lvlrand">Random value to use for level calculation</param>
+    /// <returns>Actual level of the encounter</returns>
+    public static int GetLevel<T>(T slot, LeadRequired lead, uint lvlrand) where T : ILevelRange
     {
         if ((lead & LeadRequired.PressureHustleSpiritFail) == LeadRequired.PressureHustleSpirit)
             return slot.LevelMax;
-        if (slot.IsFixedLevel)
+        if (slot.IsFixedLevel())
             return slot.LevelMin;
         int delta = slot.LevelMax - slot.LevelMin + 1;
         var adjust = (int)(lvlrand % delta);

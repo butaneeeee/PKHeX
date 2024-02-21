@@ -4,6 +4,9 @@ using System.Windows.Forms;
 
 namespace PKHeX.WinForms.Controls;
 
+/// <summary>
+/// Aligns tabs to the left side of the control with text displayed horizontally.
+/// </summary>
 public class VerticalTabControl : TabControl
 {
     public VerticalTabControl()
@@ -29,29 +32,39 @@ public class VerticalTabControl : TabControl
             e.DrawBackground();
         }
 
-        using var flags = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-        };
+        using var flags = new StringFormat();
+        flags.Alignment = StringAlignment.Center;
+        flags.LineAlignment = StringAlignment.Center;
         using var text = new SolidBrush(ForeColor);
         var tab = TabPages[index];
         graphics.DrawString(tab.Text, Font, text, bounds, flags);
         base.OnDrawItem(e);
     }
+
+    protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
+    {
+        base.ScaleControl(factor, specified);
+        ItemSize = new((int)(ItemSize.Width * factor.Width), (int)(ItemSize.Height * factor.Height));
+    }
 }
 
+/// <summary>
+/// Specialized <see cref="VerticalTabControl"/> for displaying a <see cref="PKHeX.Core.PKM"/> editor tabs.
+/// </summary>
 public sealed class VerticalTabControlEntityEditor : VerticalTabControl
 {
+    /// <summary>
+    /// Tab stripe colors based on Contest Stats.
+    /// </summary>
     private static readonly Color[] SelectedTags =
-    {
+    [
         Color.FromArgb(248, 152, 096),
         Color.FromArgb(128, 152, 248),
         Color.FromArgb(248, 168, 208),
         Color.FromArgb(112, 224, 112),
         Color.FromArgb(248, 240, 056),
         Color.RosyBrown,
-    };
+    ];
 
     protected override void OnDrawItem(DrawItemEventArgs e)
     {
@@ -75,11 +88,9 @@ public sealed class VerticalTabControlEntityEditor : VerticalTabControl
             e.DrawBackground();
         }
 
-        using var flags = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-        };
+        using var flags = new StringFormat();
+        flags.Alignment = StringAlignment.Center;
+        flags.LineAlignment = StringAlignment.Center;
         using var text = new SolidBrush(ForeColor);
         var tab = TabPages[index];
         graphics.DrawString(tab.Text, Font, text, bounds, flags);

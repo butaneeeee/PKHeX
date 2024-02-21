@@ -6,12 +6,10 @@ namespace PKHeX.Core;
 /// <summary>
 /// <see cref="PersonalInfo"/> class with values from the <see cref="GameVersion.GG"/> games.
 /// </summary>
-public sealed class PersonalInfo7GG : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM
+public sealed class PersonalInfo7GG(byte[] Data) : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM
 {
     public const int SIZE = 0x54;
-    private readonly byte[] Data;
 
-    public PersonalInfo7GG(byte[] data) => Data = data;
     public override byte[] Write() => Data;
 
     public override int HP { get => Data[0x00]; set => Data[0x00] = (byte)value; }
@@ -22,7 +20,7 @@ public sealed class PersonalInfo7GG : PersonalInfo, IPersonalAbility12H, IPerson
     public override int SPD { get => Data[0x05]; set => Data[0x05] = (byte)value; }
     public override byte Type1 { get => Data[0x06]; set => Data[0x06] = value; }
     public override byte Type2 { get => Data[0x07]; set => Data[0x07] = value; }
-    public override int CatchRate { get => Data[0x08]; set => Data[0x08] = (byte)value; }
+    public override byte CatchRate { get => Data[0x08]; set => Data[0x08] = value; }
     public override int EvoStage { get => Data[0x09]; set => Data[0x09] = (byte)value; }
     private int EVYield { get => ReadUInt16LittleEndian(Data.AsSpan(0x0A)); set => WriteUInt16LittleEndian(Data.AsSpan(0x0A), (ushort)value); }
     public override int EV_HP { get => (EVYield >> 0) & 0x3; set => EVYield = (EVYield & ~(0x3 << 0)) | ((value & 0x3) << 0); }
@@ -86,8 +84,7 @@ public sealed class PersonalInfo7GG : PersonalInfo, IPersonalAbility12H, IPerson
 
     public void SetIsLearnTM(int index, bool value)
     {
-        if ((uint)index >= CountTMHM)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTMHM);
         if (value)
             Data[TMHM + (index >> 3)] |= (byte)(1 << (index & 7));
         else

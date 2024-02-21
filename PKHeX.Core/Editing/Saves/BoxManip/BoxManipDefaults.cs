@@ -23,7 +23,7 @@ public static class BoxManipDefaults
         new BoxManipSort(SortFavorite, list => list.OrderByCustom(pk => pk is IFavorite {IsFavorite: true}), s => s.BlankPKM is IFavorite),
         new BoxManipSortComplex(SortParty, (list, sav, start) => list.BubbleUp(sav, i => ((SAV7b)sav).Blocks.Storage.IsParty(i), start), s => s is SAV7b),
         new BoxManipSort(SortShiny, list => list.OrderByCustom(pk => !pk.IsShiny)),
-        new BoxManipSort(SortRandom, list => list.OrderByCustom(_ => Util.Rand32())),
+        new BoxManipSort(SortRandom, list => list.OrderByCustom(_ => Util.Rand.Next())),
     };
 
     /// <summary>
@@ -71,8 +71,8 @@ public static class BoxManipDefaults
         new BoxManipModifyComplex(ModifyHatchEggs, (pk, sav) => pk.ForceHatchPKM(sav), s => s.Generation >= 2 && s is not SAV8LA),
         new BoxManipModify(ModifyMaxFriendship, pk => pk.MaximizeFriendship()),
         new BoxManipModify(ModifyMaxLevel, pk => pk.MaximizeLevel()),
-        new BoxManipModify(ModifyResetMoves, pk => pk.SetMoves(pk.GetMoveSet()), s => s.Generation >= 3),
-        new BoxManipModify(ModifyRandomMoves, pk => pk.SetMoves(pk.GetMoveSet(true))),
+        new BoxManipModify(ModifyResetMoves, pk => pk.SetMoveset(), s => s.Generation >= 3),
+        new BoxManipModify(ModifyRandomMoves, pk => pk.SetMoveset(true)),
         new BoxManipModify(ModifyHyperTrain,pk => pk.SetSuggestedHyperTrainingData(), s => s.Generation >= 7 && s is not SAV8LA),
         new BoxManipModify(ModifyGanbaru,pk => ((IGanbaru)pk).SetSuggestedGanbaruValues(pk), s => s is SAV8LA),
         new BoxManipModify(ModifyRemoveNicknames, pk => pk.SetDefaultNickname()),

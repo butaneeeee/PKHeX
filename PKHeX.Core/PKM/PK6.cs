@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -7,15 +6,14 @@ namespace PKHeX.Core;
 
 /// <summary> Generation 6 <see cref="PKM"/> format. </summary>
 public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetCommon6, IRibbonSetMemory6, IRibbonSetRibbons,
-    IContestStats, IGeoTrack, ISuperTrain, IFormArgument, ITrainerMemories, IAffection, IGroundTile
+    IContestStats, IGeoTrack, ISuperTrain, IFormArgument, ITrainerMemories, IAffection, IGroundTile, IAppliedMarkings4
 {
-    private static readonly ushort[] Unused =
-    {
+    public override ReadOnlySpan<ushort> ExtraBytes =>
+    [
         0x36, 0x37, // Unused Ribbons
         0x58, 0x59, 0x73, 0x90, 0x91, 0x9E, 0x9F, 0xA0, 0xA1, 0xA7, 0xAA, 0xAB, 0xAC, 0xAD, 0xC8, 0xC9, 0xD7, 0xE4, 0xE5, 0xE6, 0xE7,
-    };
+    ];
 
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
     public override EntityContext Context => EntityContext.Gen6;
     public override PersonalInfo6AO PersonalInfo => PersonalTable.AO.GetFormEntry(Species, Form);
 
@@ -114,7 +112,7 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
     public byte CNT_Smart  { get => Data[0x27]; set => Data[0x27] = value; }
     public byte CNT_Tough  { get => Data[0x28]; set => Data[0x28] = value; }
     public byte CNT_Sheen  { get => Data[0x29]; set => Data[0x29] = value; }
-    public override int MarkValue { get => Data[0x2A]; set => Data[0x2A] = (byte)value; }
+    public byte MarkingValue { get => Data[0x2A]; set => Data[0x2A] = value; }
     private byte PKRS { get => Data[0x2B]; set => Data[0x2B] = value; }
     public override int PKRS_Days { get => PKRS & 0xF; set => PKRS = (byte)((PKRS & ~0xF) | value); }
     public override int PKRS_Strain { get => PKRS >> 4; set => PKRS = (byte)((PKRS & 0xF) | (value << 4)); }
@@ -292,7 +290,7 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
     public bool SecretSuperTrainingUnlocked { get => (Data[0x72] & 1) == 1; set => Data[0x72] = (byte)((Data[0x72] & ~1) | (value ? 1 : 0)); }
     public bool SecretSuperTrainingComplete { get => (Data[0x72] & 2) == 2; set => Data[0x72] = (byte)((Data[0x72] & ~2) | (value ? 2 : 0)); }
     // 0x73 Unused
-    private uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x74)); set => WriteUInt32LittleEndian(Data.AsSpan(0x74), value); }
+    protected override uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x74)); set => WriteUInt32LittleEndian(Data.AsSpan(0x74), value); }
     public override int IV_HP { get => (int)(IV32 >> 00) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 00)) | ((value > 31 ? 31u : (uint)value) << 00); }
     public override int IV_ATK { get => (int)(IV32 >> 05) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 05)) | ((value > 31 ? 31u : (uint)value) << 05); }
     public override int IV_DEF { get => (int)(IV32 >> 10) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 10)) | ((value > 31 ? 31u : (uint)value) << 10); }
@@ -383,7 +381,8 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
     public override int Stat_SPD { get => ReadUInt16LittleEndian(Data.AsSpan(0xFC)); set => WriteUInt16LittleEndian(Data.AsSpan(0xFC), (ushort)value); }
     #endregion
 
-    public int SuperTrainingMedalCount(int maxCount = 30) => BitOperations.PopCount(SuperTrainBitFlags >> 2);
+    private const int MedalCount = 30;
+    public int SuperTrainingMedalCount(int lowBitCount = MedalCount) => BitOperations.PopCount((SuperTrainBitFlags >> 2) & (uint.MaxValue >> (MedalCount - lowBitCount)));
 
     public bool IsUntradedEvent6 => Geo1_Country == 0 && Geo1_Region == 0 && Met_Location / 10000 == 4 && Gen6;
 
@@ -444,7 +443,7 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
         CurrentHandler = 1;
         HT_Gender = tr.Gender;
 
-        // Make a memory if no memory already exists. Pretty terrible way of doing this but I'd rather not overwrite existing memories.
+        // Make a memory if no memory already exists. Pretty terrible way of doing this, but I'd rather not overwrite existing memories.
         if (HT_Memory == 0)
             this.SetTradeMemoryHT6(false);
     }
@@ -456,28 +455,35 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
     public override int MaxItemID => Legal.MaxItemID_6_AO;
     public override int MaxBallID => Legal.MaxBallID_6;
     public override int MaxGameID => Legal.MaxGameID_6; // OR
-    public override int MarkingCount => 6;
+    public int MarkingCount => 6;
 
-    public override int GetMarking(int index)
+    public bool GetMarking(int index)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        return (MarkValue >> index) & 1;
+        return ((MarkingValue >> index) & 1) != 0;
     }
 
-    public override void SetMarking(int index, int value)
+    public void SetMarking(int index, bool value)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        MarkValue = (MarkValue & ~(1 << index)) | ((value & 1) << index);
+        MarkingValue = (byte)((MarkingValue & ~(1 << index)) | ((value ? 1 : 0) << index));
     }
+
+    public bool MarkingCircle   { get => GetMarking(0); set => SetMarking(0, value); }
+    public bool MarkingTriangle { get => GetMarking(1); set => SetMarking(1, value); }
+    public bool MarkingSquare   { get => GetMarking(2); set => SetMarking(2, value); }
+    public bool MarkingHeart    { get => GetMarking(3); set => SetMarking(3, value); }
+    public bool MarkingStar     { get => GetMarking(4); set => SetMarking(4, value); }
+    public bool MarkingDiamond  { get => GetMarking(5); set => SetMarking(5, value); }
 
     public PK7 ConvertToPK7()
     {
         PK7 pk7 = new((byte[])Data.Clone())
         {
             ResortEventStatus = 0, // Clears old Marking Value
-            MarkValue = 0, // Clears old Super Training Bag & Hits Remaining
+            MarkingValue = 0, // Clears old Super Training Bag & Hits Remaining
             FormArgument = 0, // Clears old style Form Argument
             DirtType = 0, // Clears old Form Argument byte
             DirtLocation = 0, // Clears old Form Argument byte
@@ -485,21 +491,17 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
 
         // Remap boolean markings to the dual-bit format -- set 1 if marked.
         for (int i = 0; i < 6; i++)
-            pk7.SetMarking(i, GetMarking(i));
+            pk7.SetMarking(i, GetMarking(i) ? MarkingColor.Blue : MarkingColor.None);
 
         var an = AbilityNumber;
-        switch (an)
+        if (an is 1 or 2 or 4) // Valid Ability Numbers
         {
-            case 1 or 2 or 4: // Valid Ability Numbers
-                int index = an >> 1;
-
-                var abilities = (IPersonalAbility12H)PersonalInfo;
-                if (abilities.GetAbilityAtIndex(index) == Ability) // correct pair
-                    pk7.Ability = pk7.PersonalInfo.GetAbilityAtIndex(index);
-                break;
+            int index = an >> 1;
+            if (PersonalInfo.GetAbilityAtIndex(index) == Ability) // correct pair
+                pk7.Ability = pk7.PersonalInfo.GetAbilityAtIndex(index);
         }
 
-        pk7.SetTradeMemoryHT6(true); // oh no, memories on gen7 pk
+        pk7.SetTradeMemoryHT6(true); // oh no, memories on Gen7 pk
         RecentTrainerCache.SetFirstCountryRegion(pk7);
 
         // Bank-accurate data zeroing
@@ -508,7 +510,7 @@ public sealed class PK6 : G6PKM, IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetC
         span[0xAA..0xB0].Clear(); /* Unused/Amie Fullness & Enjoyment. */
         span[0xE4..0xE8].Clear(); /* Unused. */
         pk7.Data[0x72] &= 0xFC; /* Clear lower two bits of Super training flags. */
-        pk7.Data[0xDE] = 0; /* Gen IV encounter type. */
+        pk7.Data[0xDE] = 0; /* Gen4 encounter type. */
 
         // Copy Form Argument data for Furfrou and Hoopa, since we're nice.
         pk7.FormArgumentRemain = FormArgumentRemain;

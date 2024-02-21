@@ -8,11 +8,6 @@ namespace PKHeX.Core;
 /// </summary>
 public static class ArrayUtil
 {
-    public static int Count<T>(this Span<T> data, T value) where T : IEquatable<T>
-    {
-        return ((ReadOnlySpan<T>)data).Count(value);
-    }
-
     public static T Find<T>(this Span<T> data, Func<T, bool> value) where T : unmanaged
     {
         foreach (var x in data)
@@ -23,20 +18,6 @@ public static class ArrayUtil
         return default;
     }
 
-    public static int Count<T>(this ReadOnlySpan<T> data, T value) where T : IEquatable<T>
-    {
-        int count = 0;
-        for (int i = data.Length - 1; i >= 0; i--)
-        {
-            if (data[i].Equals(value))
-                count++;
-        }
-        return count;
-    }
-
-    public static byte[] Slice(this byte[] src, int offset, int length) => src.AsSpan(offset, length).ToArray();
-    public static T[] Slice<T>(this T[] src, int offset, int length) => src.AsSpan(offset, length).ToArray();
-
     /// <summary>
     /// Checks the range (exclusive max) if the <see cref="value"/> is inside.
     /// </summary>
@@ -45,7 +26,7 @@ public static class ArrayUtil
     public static IEnumerable<T[]> EnumerateSplit<T>(T[] bin, int size, int start = 0)
     {
         for (int i = start; i < bin.Length; i += size)
-            yield return bin.Slice(i, size);
+            yield return bin.AsSpan(i, size).ToArray();
     }
 
     /// <summary>
@@ -84,81 +65,5 @@ public static class ArrayUtil
                 return ctr;
             ctr++;
         }
-    }
-
-    /// <summary>
-    /// Copies an <see cref="IEnumerable{T}"/> list to the destination list, with an option to copy to a starting point.
-    /// </summary>
-    /// <typeparam name="T">Typed object to copy</typeparam>
-    /// <param name="list">Source list to copy from</param>
-    /// <param name="dest">Destination list/array</param>
-    /// <param name="start">Starting point to copy to</param>
-    /// <returns>Count of <see cref="T"/> copied.</returns>
-    public static int CopyTo<T>(this IEnumerable<T> list, IList<T> dest, int start = 0)
-    {
-        int ctr = start;
-        foreach (var z in list)
-        {
-            if ((uint)ctr >= dest.Count)
-                break;
-            dest[ctr++] = z;
-        }
-        return ctr - start;
-    }
-
-    internal static T[] ConcatAll<T>(params T[][] arr)
-    {
-        int len = 0;
-        foreach (var a in arr)
-            len += a.Length;
-
-        var result = new T[len];
-
-        int ctr = 0;
-        foreach (var a in arr)
-        {
-            a.CopyTo(result, ctr);
-            ctr += a.Length;
-        }
-
-        return result;
-    }
-
-    internal static T[] ConcatAll<T>(T[] arr1, T[] arr2)
-    {
-        int len = arr1.Length + arr2.Length;
-        var result = new T[len];
-        arr1.CopyTo(result, 0);
-        arr2.CopyTo(result, arr1.Length);
-        return result;
-    }
-
-    internal static T[] ConcatAll<T>(T[] arr1, T[] arr2, T[] arr3)
-    {
-        int len = arr1.Length + arr2.Length + arr3.Length;
-        var result = new T[len];
-        arr1.CopyTo(result, 0);
-        arr2.CopyTo(result, arr1.Length);
-        arr3.CopyTo(result, arr1.Length + arr2.Length);
-        return result;
-    }
-
-    internal static T[] ConcatAll<T>(T[] arr1, ReadOnlySpan<T> arr2)
-    {
-        int len = arr1.Length + arr2.Length;
-        var result = new T[len];
-        arr1.CopyTo(result, 0);
-        arr2.CopyTo(result.AsSpan(arr1.Length));
-        return result;
-    }
-
-    internal static T[] ConcatAll<T>(T[] arr1, T[] arr2, ReadOnlySpan<T> arr3)
-    {
-        int len = arr1.Length + arr2.Length + arr3.Length;
-        var result = new T[len];
-        arr1.CopyTo(result, 0);
-        arr2.CopyTo(result, arr1.Length);
-        arr3.CopyTo(result.AsSpan(arr1.Length + arr2.Length));
-        return result;
     }
 }

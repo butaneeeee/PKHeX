@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -13,7 +12,7 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
     protected internal override string ShortSummary => $"{Version} #{SaveCount:0000}";
     public override string Extension => this.GCExtension();
     public override PersonalTable3 Personal => PersonalTable.RS;
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_RS;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_RS;
     public SAV3GCMemoryCard? MemoryCard { get; init; }
     private readonly bool Japanese;
 
@@ -23,7 +22,7 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
     {
         Japanese = japanese;
         Box = 0;
-        Blocks = Array.Empty<BlockInfoRSBOX>();
+        Blocks = [];
         ClearBoxes();
     }
 
@@ -40,7 +39,11 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
         int[] SaveCounts = Array.ConvertAll(Blocks, block => (int)block.SaveCount);
         SaveCount = SaveCounts.Max();
         int ActiveSAV = Array.IndexOf(SaveCounts, SaveCount) / BLOCK_COUNT;
-        Blocks = Blocks.Skip(ActiveSAV * BLOCK_COUNT).Take(BLOCK_COUNT).OrderBy(b => b.ID).ToArray();
+        var ordered = Blocks
+            .Skip(ActiveSAV * BLOCK_COUNT)
+            .Take(BLOCK_COUNT)
+            .OrderBy(b => b.ID);
+        Blocks = [..ordered];
 
         // Set up PC data buffer beyond end of save file.
         Box = Data.Length;
@@ -52,7 +55,7 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
             Array.Copy(Data, b.Offset + 0xC, Data, (int) (Box + (b.ID * copySize)), copySize);
     }
 
-    private static BlockInfoRSBOX[] ReadBlocks(byte[] data)
+    private static BlockInfoRSBOX[] ReadBlocks(ReadOnlySpan<byte> data)
     {
         var blocks = new BlockInfoRSBOX[2 * BLOCK_COUNT];
         for (int i = 0; i < blocks.Length; i++)
@@ -91,7 +94,7 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
 
         SetChecksums();
 
-        return GetData(0, Data.Length - SIZE_RESERVED);
+        return Data[..^SIZE_RESERVED];
     }
 
     // Configuration
@@ -109,7 +112,7 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
     public override int MaxBallID => Legal.MaxBallID_3;
     public override int MaxGameID => Legal.MaxGameID_3;
 
-    public override int MaxEV => 255;
+    public override int MaxEV => EffortValues.Max255;
     public override int Generation => 3;
     public override EntityContext Context => EntityContext.Gen3;
     protected override int GiftCountMax => 1;
@@ -140,11 +143,16 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
         set => Data[Box + 4] = (byte)(value / 2);
     }
 
+    private Span<byte> GetBoxNameSpan(int box)
+    {
+        int offset = Box + 0x1EC38 + (9 * box);
+        return Data.AsSpan(offset, 9);
+    }
+
     protected override int GetBoxWallpaperOffset(int box)
     {
         // Box Wallpaper is directly after the Box Names
-        int offset = Box + 0x1ED19 + (box / 2);
-        return offset;
+        return Box + 0x1ED19 + (box / 2);
     }
 
     public override string GetBoxName(int box)
@@ -155,18 +163,18 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
         string boxName = $"[{lo:00}-{hi:00}] ";
         box /= 2;
 
-        int offset = Box + 0x1EC38 + (9 * box);
-        if (Data[offset] is 0 or 0xFF)
+        var span = GetBoxNameSpan(box);
+        if (span[0] is 0 or 0xFF)
             boxName += $"BOX {box + 1}";
-        boxName += GetString(offset, 9);
+        else
+            boxName += GetString(span);
 
         return boxName;
     }
 
     public override void SetBoxName(int box, ReadOnlySpan<char> value)
     {
-        int offset = Box + 0x1EC38 + (9 * box);
-        var span = Data.AsSpan(offset, 9);
+        var span = GetBoxNameSpan(box);
         if (value == $"BOX {box + 1}")
         {
             span.Clear();
@@ -189,11 +197,11 @@ public sealed class SAV3RSBox : SaveFile, IGCSaveFile
         return PokeCrypto.DecryptArray3(data);
     }
 
-    protected override void SetDex(PKM pk) { /* No Pokedex for this game, do nothing */ }
+    protected override void SetDex(PKM pk) { /* No Pokédex for this game, do nothing */ }
 
-    public override void WriteBoxSlot(PKM pk, Span<byte> data, int offset)
+    public override void WriteBoxSlot(PKM pk, Span<byte> data)
     {
-        base.WriteBoxSlot(pk, data, offset);
+        base.WriteBoxSlot(pk, data);
         WriteUInt16LittleEndian(data[(PokeCrypto.SIZE_3STORED)..], pk.TID16);
         WriteUInt16LittleEndian(data[(PokeCrypto.SIZE_3STORED + 2)..], pk.SID16);
     }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -8,17 +7,12 @@ namespace PKHeX.Core;
 /// <summary> Generation 3 <see cref="PKM"/> format. </summary>
 public sealed class PK3 : G3PKM, ISanityChecksum
 {
-    private static readonly ushort[] Unused =
-    {
-        0x2A, 0x2B,
-    };
+    public override ReadOnlySpan<ushort> ExtraBytes => [0x2A, 0x2B];
 
     public override int SIZE_PARTY => PokeCrypto.SIZE_3PARTY;
     public override int SIZE_STORED => PokeCrypto.SIZE_3STORED;
     public override EntityContext Context => EntityContext.Gen3;
     public override PersonalInfo3 PersonalInfo => PersonalTable.RS[Species];
-
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
 
     public PK3() : base(PokeCrypto.SIZE_3PARTY) { }
     public PK3(byte[] data) : base(DecryptParty(data)) { }
@@ -66,7 +60,7 @@ public sealed class PK3 : G3PKM, ISanityChecksum
         get => StringConverter3.GetString(OT_Trash, Japanese);
         set => StringConverter3.SetString(OT_Trash, value, 7, Japanese, StringConverterOption.None);
     }
-    public override int MarkValue { get => SwapBits(Data[0x1B], 1, 2); set => Data[0x1B] = (byte)SwapBits(value, 1, 2); }
+    public override byte MarkingValue { get => (byte)SwapBits(Data[0x1B], 1, 2); set => Data[0x1B] = (byte)SwapBits(value, 1, 2); }
     public ushort Checksum { get => ReadUInt16LittleEndian(Data.AsSpan(0x1C)); set => WriteUInt16LittleEndian(Data.AsSpan(0x1C), value); }
     public ushort Sanity { get => ReadUInt16LittleEndian(Data.AsSpan(0x1E)); set => WriteUInt16LittleEndian(Data.AsSpan(0x1E), value); }
 
@@ -134,7 +128,7 @@ public sealed class PK3 : G3PKM, ISanityChecksum
     public override int Ball { get => (Origins >> 11) & 0xF; set => Origins = (ushort)((Origins & ~0x7800) | ((value & 0xF) << 11)); }
     public override int OT_Gender { get => (Origins >> 15) & 1; set => Origins = (ushort)((Origins & ~(1 << 15)) | ((value & 1) << 15)); }
 
-    public uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x48)); set => WriteUInt32LittleEndian(Data.AsSpan(0x48), value); }
+    private uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x48)); set => WriteUInt32LittleEndian(Data.AsSpan(0x48), value); }
     public override int IV_HP  { get => (int)(IV32 >> 00) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 00)) | ((value > 31 ? 31u : (uint)value) << 00); }
     public override int IV_ATK { get => (int)(IV32 >> 05) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 05)) | ((value > 31 ? 31u : (uint)value) << 05); }
     public override int IV_DEF { get => (int)(IV32 >> 10) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 10)) | ((value > 31 ? 31u : (uint)value) << 10); }
@@ -205,14 +199,15 @@ public sealed class PK3 : G3PKM, ISanityChecksum
         return PokeCrypto.EncryptArray3(Data);
     }
 
+    private ushort CalculateChecksum() => Checksums.Add16(Data.AsSpan()[0x20..PokeCrypto.SIZE_3STORED]);
+
     public override void RefreshChecksum()
     {
         FlagIsBadEgg = false;
-        Checksum = PokeCrypto.GetCHK3(Data);
+        Checksum = CalculateChecksum();
     }
 
     public override bool ChecksumValid => CalculateChecksum() == Checksum;
-    private ushort CalculateChecksum() => PokeCrypto.GetCHK3(Data);
 
     public PK4 ConvertToPK4()
     {
@@ -227,7 +222,7 @@ public sealed class PK3 : G3PKM, ISanityChecksum
             Form = Form,
             // IsEgg = false, -- already false
             OT_Friendship = 70,
-            MarkValue = MarkValue & 0b1111,
+            MarkingValue = (byte)(MarkingValue & 0b1111),
             Language = Language,
             EV_HP = EV_HP,
             EV_ATK = EV_ATK,
@@ -261,7 +256,7 @@ public sealed class PK3 : G3PKM, ISanityChecksum
             PKRS_Strain = PKRS_Strain,
             PKRS_Days = PKRS_Days,
             OT_Gender = OT_Gender,
-            MetDate = DateOnly.FromDateTime(DateTime.Now),
+            MetDate = EncounterDate.GetDateNDS(),
             Met_Level = CurrentLevel,
             Met_Location = Locations.Transfer3, // Pal Park
 

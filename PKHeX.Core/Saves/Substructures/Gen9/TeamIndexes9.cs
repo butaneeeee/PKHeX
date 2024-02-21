@@ -3,17 +3,15 @@ using static System.Buffers.Binary.BinaryPrimitives;
 
 namespace PKHeX.Core;
 
-public sealed class TeamIndexes9 : SaveBlock<SAV9SV>, ITeamIndexSet
+public sealed class TeamIndexes9(SAV9SV sav, SCBlock indexes, SCBlock locks) : ITeamIndexSet
 {
     private const int TeamCount = 6;
     private const int NONE_SELECTED = -1;
     public readonly int[] TeamSlots = new int[TeamCount * 6];
 
-    public TeamIndexes9(SAV9SV sav, SCBlock block) : base(sav, block.Data) { }
-
     public void LoadBattleTeams()
     {
-        if (!SAV.State.Exportable)
+        if (!sav.State.Exportable)
         {
             ClearBattleTeams();
             return;
@@ -21,7 +19,7 @@ public sealed class TeamIndexes9 : SaveBlock<SAV9SV>, ITeamIndexSet
 
         for (int i = 0; i < TeamCount * 6; i++)
         {
-            short val = ReadInt16LittleEndian(Data.AsSpan(i * 2));
+            short val = ReadInt16LittleEndian(indexes.Data.AsSpan(i * 2));
             if (val < 0)
             {
                 TeamSlots[i] = NONE_SELECTED;
@@ -30,7 +28,7 @@ public sealed class TeamIndexes9 : SaveBlock<SAV9SV>, ITeamIndexSet
 
             int box = val >> 8;
             int slot = val & 0xFF;
-            int index = (SAV.BoxSlotCount * box) + slot;
+            int index = (sav.BoxSlotCount * box) + slot;
             TeamSlots[i] = index & 0xFFFF;
         }
     }
@@ -49,7 +47,7 @@ public sealed class TeamIndexes9 : SaveBlock<SAV9SV>, ITeamIndexSet
 
     public void SaveBattleTeams()
     {
-        var span = Data.AsSpan();
+        var span = indexes.Data.AsSpan();
         for (int i = 0; i < TeamCount * 6; i++)
         {
             int index = TeamSlots[i];
@@ -59,12 +57,12 @@ public sealed class TeamIndexes9 : SaveBlock<SAV9SV>, ITeamIndexSet
                 continue;
             }
 
-            SAV.GetBoxSlotFromIndex(index, out var box, out var slot);
+            sav.GetBoxSlotFromIndex(index, out var box, out var slot);
             index = (box << 8) | slot;
             WriteInt16LittleEndian(span[(i * 2)..], (short)index);
         }
     }
 
-    public bool GetIsTeamLocked(int team) => true;
-    public void SetIsTeamLocked(int team, bool value) { }
+    public bool GetIsTeamLocked(int team) => FlagUtil.GetFlag(locks.Data, 0, team);
+    public void SetIsTeamLocked(int team, bool value) => FlagUtil.SetFlag(locks.Data, 0, team, value);
 }

@@ -6,15 +6,15 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 7 Mystery Gift Template File
 /// </summary>
-public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, ILangNick, IContestStats, INature, IMemoryOT
+public sealed class WC7(byte[] Data) : DataMysteryGift(Data), IRibbonSetEvent3, IRibbonSetEvent4, ILangNick,
+    IContestStats, INature, IMemoryOT, IRestrictVersion
 {
+    public WC7() : this(new byte[Size]) { }
+
     public const int Size = 0x108;
     public override int Generation => 7;
     public override EntityContext Context => EntityContext.Gen7;
     public override bool FatefulEncounter => true;
-
-    public WC7() : this(new byte[Size]) { }
-    public WC7(byte[] data) : base(data) { }
 
     public int RestrictLanguage { get; set; } // None
     public byte RestrictVersion { get; set; } // Permit All
@@ -23,6 +23,8 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
     {
         if (v is < (int)GameVersion.SN or > (int)GameVersion.UM)
             return false;
+        if (CardID is 2046)
+            return v is (int)GameVersion.SN or (int)GameVersion.MN;
         if (RestrictVersion == 0)
             return true; // no data
         var bitIndex = v - (int)GameVersion.SN;
@@ -292,10 +294,11 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
     // Meta Accessible Properties
     public override int[] IVs
     {
-        get => new[] { IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD };
+        get => [IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD];
         set
         {
-            if (value.Length != 6) return;
+            if (value.Length != 6)
+                return;
             IV_HP = value[0]; IV_ATK = value[1]; IV_DEF = value[2];
             IV_SPE = value[3]; IV_SPA = value[4]; IV_SPD = value[5];
         }
@@ -315,10 +318,11 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
 
     public int[] EVs
     {
-        get => new[] { EV_HP, EV_ATK, EV_DEF, EV_SPE, EV_SPA, EV_SPD };
+        get => [EV_HP, EV_ATK, EV_DEF, EV_SPE, EV_SPA, EV_SPD];
         set
         {
-            if (value.Length != 6) return;
+            if (value.Length != 6)
+                return;
             EV_HP = value[0]; EV_ATK = value[1]; EV_DEF = value[2];
             EV_SPE = value[3]; EV_SPA = value[4]; EV_SPD = value[5];
         }
@@ -438,7 +442,7 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         }
         else
         {
-            pk.SetDefaultRegionOrigins();
+            pk.SetDefaultRegionOrigins(language);
         }
 
         pk.SetMaximumPPCurrent();
@@ -456,7 +460,7 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
             pk.SID16 = tr.SID16;
         }
 
-        pk.MetDate = Date ?? DateOnly.FromDateTime(DateTime.Now);
+        pk.MetDate = Date ?? EncounterDate.GetDate3DS();
 
         pk.IsNicknamed = IsNicknamed;
         pk.Nickname = IsNicknamed ? Nickname : SpeciesName.GetSpeciesNameGeneration(Species, pk.Language, Generation);
@@ -471,7 +475,7 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         return pk;
     }
 
-    private void SetEggMetData(PKM pk)
+    private void SetEggMetData(PK7 pk)
     {
         pk.IsEgg = true;
         pk.EggMetDate = Date;
@@ -479,9 +483,9 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         pk.IsNicknamed = true;
     }
 
-    private void SetPINGA(PKM pk, EncounterCriteria criteria)
+    private void SetPINGA(PK7 pk, EncounterCriteria criteria)
     {
-        var pi = PersonalTable.USUM.GetFormEntry(Species, Form);
+        var pi = pk.PersonalInfo;
         pk.Nature = (int)criteria.GetNature((Nature)Nature);
         pk.Gender = criteria.GetGender(Gender, pi);
         var av = GetAbilityIndex(criteria);
@@ -506,7 +510,7 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         _ => AbilityPermission.Any12H,
     };
 
-    private void SetPID(PKM pk)
+    private void SetPID(PK7 pk)
     {
         switch (PIDType)
         {
@@ -527,7 +531,7 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         }
     }
 
-    private void SetIVs(PKM pk)
+    private void SetIVs(PK7 pk)
     {
         Span<int> finalIVs = stackalloc int[6];
         GetIVs(finalIVs);
@@ -613,25 +617,44 @@ public sealed class WC7 : DataMysteryGift, IRibbonSetEvent3, IRibbonSetEvent4, I
         if (CardID is 1122 or 1133 && !CanBeReceivedByVersion(pk.Version))
             return false; // Each version pair has a separate card -- since we aren't using deferral/partial match logic to reorder, just return false.
         if (CardID == 2046) // Greninja WC has variant PID and can arrive @ 36 or 37
-            return pk.SM; // not USUM
+            return pk.SM; // not US/UM
 
         return PIDType != 0 || pk.PID == PID;
     }
 
     public override GameVersion Version
     {
-        get => CardID == 2046 ? GameVersion.SM : GameVersion.Gen7;
+        get
+        {
+            if (CardID == 2046)
+                return GameVersion.SM;
+            return RestrictVersion switch
+            {
+                1 => GameVersion.SN,
+                2 => GameVersion.MN,
+                3 => GameVersion.SM,
+                4 => GameVersion.US,
+                8 => GameVersion.UM,
+                12 => GameVersion.USUM,
+                _ => GameVersion.Gen7,
+            };
+        }
         set { }
     }
 
-    protected override bool IsMatchDeferred(PKM pk) => Species != pk.Species;
+    protected override bool IsMatchDeferred(PKM pk) => false;
 
     protected override bool IsMatchPartial(PKM pk)
     {
         if (RestrictLanguage != 0 && RestrictLanguage != pk.Language)
             return true;
         if (!CanBeReceivedByVersion(pk.Version))
-            return true;
+        {
+            if (!IsEgg || pk.IsEgg)
+                return true;
+            if (pk.Egg_Location != Locations.LinkTrade6)
+                return true;
+        }
         return false;
     }
 }

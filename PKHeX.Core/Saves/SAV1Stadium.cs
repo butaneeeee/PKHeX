@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using static System.Buffers.Binary.BinaryPrimitives;
 
 namespace PKHeX.Core;
@@ -13,8 +12,8 @@ public sealed class SAV1Stadium : SAV_STADIUM
     public override string SaveRevisionString => Japanese ? "J" : "U";
 
     public override PersonalTable1 Personal => PersonalTable.Y;
-    public override int MaxEV => ushort.MaxValue;
-    public override IReadOnlyList<ushort> HeldItems => Array.Empty<ushort>();
+    public override int MaxEV => EffortValues.Max12;
+    public override ReadOnlySpan<ushort> HeldItems => [];
     public override GameVersion Version { get; protected set; } = GameVersion.Stadium;
 
     protected override SAV1Stadium CloneInternal() => new((byte[])Data.Clone(), Japanese);
@@ -113,10 +112,9 @@ public sealed class SAV1Stadium : SAV_STADIUM
         int len = StringLength;
         var nick = data.AsSpan(PokeCrypto.SIZE_1STORED, len);
         var ot = data.AsSpan(PokeCrypto.SIZE_1STORED + len, len);
-        data = data.Slice(0, PokeCrypto.SIZE_1STORED);
-        var pk1 = new PK1(data, Japanese);
-        nick.CopyTo(pk1.RawNickname);
-        ot.CopyTo(pk1.RawOT);
+        var pk1 = new PK1(data[..PokeCrypto.SIZE_1STORED], Japanese);
+        nick.CopyTo(pk1.Nickname_Trash);
+        ot.CopyTo(pk1.OT_Trash);
         return pk1;
     }
 
@@ -128,8 +126,8 @@ public sealed class SAV1Stadium : SAV_STADIUM
         var data = pk.Data;
         int len = StringLength;
         data.CopyTo(result, 0);
-        gb.RawNickname.CopyTo(result, PokeCrypto.SIZE_1STORED);
-        gb.RawOT.CopyTo(result, PokeCrypto.SIZE_1STORED + len);
+        gb.Nickname_Trash.CopyTo(result.AsSpan(PokeCrypto.SIZE_1STORED));
+        gb.OT_Trash.CopyTo(result.AsSpan(PokeCrypto.SIZE_1STORED + len));
         return result;
     }
 
@@ -204,7 +202,7 @@ public sealed class SAV1Stadium : SAV_STADIUM
 
         var ofs = GetTeamOffset(team);
         var otOfs = ofs + (Japanese ? 2 : 1);
-        var str = GetString(otOfs, Japanese ? 5 : 7);
+        var str = GetString(Data.AsSpan(otOfs, Japanese ? 5 : 7));
         if (string.IsNullOrWhiteSpace(str))
             return name;
         var idOfs = ofs + (Japanese ? 0x8 : 0xC);
@@ -249,25 +247,25 @@ public sealed class SAV1Stadium : SAV_STADIUM
         for (int i = 0; i < 6; i++)
         {
             var rel = ofs + ListHeaderSize + (i * SIZE_STORED);
-            members[i] = (PK1)GetStoredSlot(Data, rel);
+            members[i] = (PK1)GetStoredSlot(Data.AsSpan(rel));
         }
         return new SlotGroup(name, members);
     }
 
-    public override void WriteSlotFormatStored(PKM pk, Span<byte> data, int offset)
+    public override void WriteSlotFormatStored(PKM pk, Span<byte> data)
     {
         // pk that have never been boxed have yet to save the 'current level' for box indication
         // set this value at this time
         ((PK1)pk).Stat_LevelBox = pk.CurrentLevel;
-        base.WriteSlotFormatStored(pk, Data, offset);
+        base.WriteSlotFormatStored(pk, data);
     }
 
-    public override void WriteBoxSlot(PKM pk, Span<byte> data, int offset)
+    public override void WriteBoxSlot(PKM pk, Span<byte> data)
     {
         // pk that have never been boxed have yet to save the 'current level' for box indication
         // set this value at this time
         ((PK1)pk).Stat_LevelBox = pk.CurrentLevel;
-        base.WriteBoxSlot(pk, Data, offset);
+        base.WriteBoxSlot(pk, data);
     }
 
     public static bool IsStadium(ReadOnlySpan<byte> data)

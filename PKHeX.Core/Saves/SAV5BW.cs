@@ -45,6 +45,7 @@ public sealed class SAV5BW : SAV5
     public override Zukan5 Zukan => Blocks.Zukan;
     public override Misc5 Misc => Blocks.Misc;
     public override MysteryBlock5 Mystery => Blocks.Mystery;
+    public override Chatter5 Chatter => Blocks.Chatter;
     public override Daycare5 Daycare => Blocks.Daycare;
     public override BoxLayout5 BoxLayout => Blocks.BoxLayout;
     public override PlayerData5 PlayerData => Blocks.PlayerData;
@@ -52,6 +53,6 @@ public sealed class SAV5BW : SAV5
     public override Entralink5 Entralink => Blocks.Entralink;
     public override Musical5 Musical => Blocks.Musical;
     public override Encount5 Encount => Blocks.Encount;
-    public override int Fused => int.MinValue;
+    public override UnityTower5 UnityTower => Blocks.UnityTower;
     public override int GTS => 0x20500;
 }

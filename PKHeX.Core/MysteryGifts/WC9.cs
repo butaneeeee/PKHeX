@@ -7,9 +7,13 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 9 Mystery Gift Template File
 /// </summary>
-public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbonIndex, IMemoryOT, ILangNicknamedTemplate, IEncounterServerDate,
-    IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetCommon6, IRibbonSetCommon7, IRibbonSetCommon8, IRibbonSetMark8, IRibbonSetCommon9, IRibbonSetMark9
+public sealed class WC9(byte[] Data) : DataMysteryGift(Data), ILangNick, INature, ITeraType, IRibbonIndex, IMemoryOT,
+    ILangNicknamedTemplate, IEncounterServerDate,
+    IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetCommon6, IRibbonSetCommon7,
+    IRibbonSetCommon8, IRibbonSetMark8, IRibbonSetCommon9, IRibbonSetMark9, IEncounterMarkExtra
 {
+    public WC9() : this(new byte[Size]) { }
+
     public const int Size = 0x2C8;
     public const int CardStart = 0x0;
 
@@ -26,18 +30,15 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         Clothing = 4,
     }
 
-    public WC9() : this(new byte[Size]) { }
-    public WC9(byte[] data) : base(data) { }
-
     public byte RestrictVersion { get => Data[0xE]; set => Data[0xE] = value; }
 
-    public bool CanBeReceivedByVersion(int v) => RestrictVersion switch
+    public bool CanBeReceivedByVersion(PKM pk) => RestrictVersion switch
     {
         0 when !IsEntity => true, // Whatever, essentially unrestricted for SL/VL receipt. No Entity gifts are 0.
-        1 => v is (int)GameVersion.SL,
-        2 => v is (int)GameVersion.VL,
-        3 => v is (int)GameVersion.SL or (int)GameVersion.VL,
-        _ => throw new ArgumentOutOfRangeException(nameof(RestrictVersion), RestrictVersion, null),
+        1 => pk.Version is (int)GameVersion.SL || pk.Met_Location == LocationsHOME.SWSL,
+        2 => pk.Version is (int)GameVersion.VL || pk.Met_Location == LocationsHOME.SHVL,
+        3 => pk.Version is (int)GameVersion.SL or (int)GameVersion.VL || pk.Met_Location is LocationsHOME.SWSL or LocationsHOME.SHVL,
+          _ => throw new ArgumentOutOfRangeException(nameof(RestrictVersion), RestrictVersion, null),
     };
 
     // General Card Properties
@@ -45,6 +46,13 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
     {
         get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x8));
         set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x8), (ushort)value);
+    }
+
+    // Added in 1.2.0; now can enforce a fixed scale if not 256.
+    public ushort Scale
+    {
+        get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x0C));
+        set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x0C), value);
     }
 
     public byte CardFlags { get => Data[CardStart + 0x10]; set => Data[CardStart + 0x10] = value; }
@@ -120,6 +128,12 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
     // Since we expose the 16bit (pk9) component values here, just adjust them accordingly with an inlined calc.
     public override uint ID32
     {
+        get => ReadUInt32LittleEndian(Data.AsSpan(CardStart + 0x18));
+        set => WriteUInt32LittleEndian(Data.AsSpan(CardStart + 0x18), value);
+    }
+
+    public uint ID32Old
+    {
         get => ReadUInt32LittleEndian(Data.AsSpan(CardStart + 0x18)) - (1000000u * (uint)CardID);
         set => WriteUInt32LittleEndian(Data.AsSpan(CardStart + 0x18), value + (1000000u * (uint)CardID));
     }
@@ -179,7 +193,7 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
     public ushort RelearnMove3 { get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x234)); set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x234), value); }
     public ushort RelearnMove4 { get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x236)); set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x236), value); }
 
-    public override ushort Species { get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x238)); set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x238), value); }
+    public override ushort Species { get => SpeciesConverter.GetNational9(ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x238))); set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x238), SpeciesConverter.GetInternal9(value)); }
     public override byte Form { get => Data[CardStart + 0x23A]; set => Data[CardStart + 0x23A] = value; }
     public override int Gender { get => Data[CardStart + 0x23B]; set => Data[CardStart + 0x23B] = (byte)value; }
     public override byte Level { get => Data[CardStart + 0x23C]; set => Data[CardStart + 0x23C] = value; }
@@ -191,8 +205,13 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
 
     public int MetLevel { get => Data[CardStart + 0x241]; set => Data[CardStart + 0x241] = (byte)value; }
     public MoveType TeraTypeOriginal { get => (MoveType)Data[CardStart + 0x242]; set => Data[CardStart + 0x242] = (byte)value; }
-    public MoveType TeraTypeOverride { get => (MoveType)Data[CardStart + 0x243]; set => Data[CardStart + 0x243] = (byte)value; }
-    public MoveType TeraType => TeraTypeUtil.GetTeraType((byte)TeraTypeOriginal, (byte)TeraTypeOverride);
+    public MoveType TeraTypeOverride
+    {
+        get => (MoveType)TeraTypeUtil.OverrideNone;
+        set { }
+    }
+
+    public MoveType TeraType => TeraTypeOriginal;
     public short HeightValue { get => ReadInt16LittleEndian(Data.AsSpan(CardStart + 0x244)); set => WriteInt16LittleEndian(Data.AsSpan(CardStart + 0x244), value); }
     public short WeightValue { get => ReadInt16LittleEndian(Data.AsSpan(CardStart + 0x246)); set => WriteInt16LittleEndian(Data.AsSpan(CardStart + 0x246), value); }
 
@@ -209,8 +228,6 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         {
             foreach (var value in RibbonSpan)
             {
-                if (value == RibbonByteNone)
-                    return false; // end
                 if (((RibbonIndex)value).IsEncounterMark8())
                     return true;
             }
@@ -224,8 +241,6 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         {
             foreach (var value in RibbonSpan)
             {
-                if (value == RibbonByteNone)
-                    return false; // end
                 if (((RibbonIndex)value).IsEncounterMark9())
                     return true;
             }
@@ -235,15 +250,13 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
 
     public byte GetRibbonAtIndex(int byteIndex)
     {
-        if ((uint)byteIndex >= RibbonBytesCount)
-            throw new ArgumentOutOfRangeException(nameof(byteIndex));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)byteIndex, RibbonBytesCount);
         return Data[RibbonBytesOffset + byteIndex];
     }
 
     public void SetRibbonAtIndex(int byteIndex, byte ribbonIndex)
     {
-        if ((uint)byteIndex >= RibbonBytesCount)
-            throw new ArgumentOutOfRangeException(nameof(byteIndex));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)byteIndex, RibbonBytesCount);
         Data[RibbonBytesOffset + byteIndex] = ribbonIndex;
     }
 
@@ -268,13 +281,16 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
     public byte OT_Feeling { get => Data[CardStart + 0x277]; set => Data[CardStart + 0x277] = value; }
     public ushort OT_TextVar { get => ReadUInt16LittleEndian(Data.AsSpan(CardStart + 0x278)); set => WriteUInt16LittleEndian(Data.AsSpan(CardStart + 0x278), value); }
 
+    public ushort Checksum => ReadUInt16LittleEndian(Data.AsSpan(0x2C4));
+
     // Meta Accessible Properties
     public override int[] IVs
     {
-        get => new[] { IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD };
+        get => [IV_HP, IV_ATK, IV_DEF, IV_SPE, IV_SPA, IV_SPD];
         set
         {
-            if (value.Length != 6) return;
+            if (value.Length != 6)
+                return;
             IV_HP = value[0]; IV_ATK = value[1]; IV_DEF = value[2];
             IV_SPE = value[3]; IV_SPA = value[4]; IV_SPD = value[5];
         }
@@ -294,10 +310,11 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
 
     public int[] EVs
     {
-        get => new[] { EV_HP, EV_ATK, EV_DEF, EV_SPE, EV_SPA, EV_SPD };
+        get => [EV_HP, EV_ATK, EV_DEF, EV_SPE, EV_SPA, EV_SPD];
         set
         {
-            if (value.Length != 6) return;
+            if (value.Length != 6)
+                return;
             EV_HP = value[0]; EV_ATK = value[1]; EV_DEF = value[2];
             EV_SPE = value[3]; EV_SPA = value[4]; EV_SPD = value[5];
         }
@@ -423,7 +440,8 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         if (!IsEntity)
             throw new ArgumentException(nameof(IsEntity));
 
-        int currentLevel = Level > 0 ? Level : 1 + Util.Rand.Next(100);
+        var rnd = Util.Rand;
+        int currentLevel = Level > 0 ? Level : 1 + rnd.Next(100);
         int metLevel = MetLevel > 0 ? MetLevel : currentLevel;
         var pi = PersonalTable.SV.GetFormEntry(Species, Form);
         var language = tr.Language;
@@ -432,9 +450,8 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
 
         var pk = new PK9
         {
-            EncryptionConstant = EncryptionConstant != 0 || IsHOMEGift ? EncryptionConstant : Util.Rand32(),
-            TID16 = TID16,
-            SID16 = SID16,
+            EncryptionConstant = EncryptionConstant != 0 ? EncryptionConstant : rnd.Rand32(),
+            ID32 = ID32,
             Species = Species,
             Form = Form,
             CurrentLevel = currentLevel,
@@ -484,28 +501,25 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         // The game doesn't have random tera types.
         pk.SetMaximumPPCurrent();
 
-        if ((tr.Generation > Generation && OriginGame == 0) || !CanBeReceivedByVersion(pk.Version))
+        if ((tr.Generation > Generation && OriginGame == 0) || !CanBeReceivedByVersion(pk))
         {
             // give random valid game
-            var rnd = Util.Rand;
             do { pk.Version = (int)GameVersion.SL + rnd.Next(2); }
-            while (!CanBeReceivedByVersion(pk.Version));
+            while (!CanBeReceivedByVersion(pk));
         }
+
+        var date = GetSuggestedDate();
+        pk.MetDate = date;
 
         if (OTGender >= 2)
         {
             pk.TID16 = tr.TID16;
             pk.SID16 = tr.SID16;
-
-            if (IsHOMEGift)
-            {
-                pk.ID32 %= 1_000_000;
-                while (pk.TSV == 0)
-                    pk.ID32 = (uint)Util.Rand.Next(16, 999_999 + 1);
-            }
         }
-
-        pk.MetDate = IsDateRestricted && EncounterServerDate.WC9Gifts.TryGetValue(CardID, out var dt) ? dt.Start : DateOnly.FromDateTime(DateTime.Now);
+        else if (IsBeforePatch200(date))
+        {
+            pk.ID32 = ID32Old;
+        }
 
         var nickname_language = GetLanguage(language);
         pk.Language = nickname_language != 0 ? nickname_language : tr.Language;
@@ -515,8 +529,10 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         for (var i = 0; i < RibbonBytesCount; i++)
         {
             var ribbon = GetRibbonAtIndex(i);
-            if (ribbon != RibbonByteNone)
-                pk.SetRibbon(ribbon);
+            if (ribbon == RibbonByteNone)
+                continue;
+            pk.SetRibbon(ribbon);
+            pk.AffixedRibbon = (sbyte)ribbon;
         }
 
         SetPINGA(pk, criteria);
@@ -525,12 +541,14 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
             SetEggMetData(pk);
         pk.CurrentFriendship = pk.IsEgg ? pi.HatchCycles : pi.BaseFriendship;
 
-        if (!IsHOMEGift)
-        {
-            pk.HeightScalar = PokeSizeUtil.GetRandomScalar();
-            pk.WeightScalar = PokeSizeUtil.GetRandomScalar();
-            pk.Scale = PokeSizeUtil.GetRandomScalar();
-        }
+        pk.HeightScalar = (byte)HeightValue;
+        pk.WeightScalar = (byte)WeightValue;
+        if (IsBeforePatch120(CardID) && IsBeforePatch120(date))
+            pk.Scale = PokeSizeUtil.GetRandomScalar(rnd);
+        else if (Scale == 256)
+            pk.Scale = (byte)rnd.Next(256);
+        else
+            pk.Scale = (byte)Scale;
 
         pk.Obedience_Level = Level;
         pk.ResetPartyStats();
@@ -538,31 +556,50 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         return pk;
     }
 
-    private void SetEggMetData(PKM pk)
+    private static bool IsBeforePatch120(int cardID) => cardID is 0001 or 0006 or 0501 or 1501; // Flabébé, Gyarados, Pikachu, Garganacl
+
+    private const int DayNumber20230301 = 738579; // S/V Patch 1.2.0
+    private const int DayNumber20230913 = 738775; // S/V Patch 2.0.1
+    private static bool IsBeforePatch120(DateOnly date) => date.DayNumber < DayNumber20230301; // scale handling updated
+    private static bool IsBeforePatch200(DateOnly date) => date.DayNumber <= DayNumber20230913; // ID32 handling updated
+
+    private DateOnly GetSuggestedDate()
+    {
+        if (!IsDateRestricted)
+            return EncounterDate.GetDateSwitch();
+        if (EncounterServerDate.WC9GiftsChk.TryGetValue(Checksum, out var range))
+            return range.Start;
+        if (EncounterServerDate.WC9Gifts.TryGetValue(CardID, out range))
+            return range.Start;
+        return EncounterDate.GetDateSwitch();
+    }
+
+    private void SetEggMetData(PK9 pk)
     {
         pk.IsEgg = true;
-        pk.EggMetDate = DateOnly.FromDateTime(DateTime.Now);
+        pk.EggMetDate = EncounterDate.GetDateSwitch();
         pk.Nickname = SpeciesName.GetEggName(pk.Language, Generation);
         pk.IsNicknamed = true;
     }
 
-    private void SetPINGA(PKM pk, EncounterCriteria criteria)
+    private void SetPINGA(PK9 pk, EncounterCriteria criteria)
     {
-        var pi = PersonalTable.SV.GetFormEntry(Species, Form);
-        pk.Nature = (int)criteria.GetNature(Nature == -1 ? Core.Nature.Random : (Nature)Nature);
-        pk.StatNature = pk.Nature;
+        var pi = pk.PersonalInfo;
+        pk.Nature = pk.StatNature = (int)criteria.GetNature(Nature == -1 ? Core.Nature.Random : (Nature)Nature);
         pk.Gender = criteria.GetGender(Gender, pi);
         var av = GetAbilityIndex(criteria);
         pk.RefreshAbility(av);
-        SetPID(pk, pk.MetDate ?? DateOnly.FromDateTime(DateTime.UtcNow));
+        SetPID(pk);
         SetIVs(pk);
     }
 
-    private int GetAbilityIndex(EncounterCriteria criteria) => AbilityType switch
+    private int GetAbilityIndex(EncounterCriteria criteria) => GetAbilityIndex(criteria, AbilityType);
+
+    private int GetAbilityIndex(EncounterCriteria criteria, int type) => type switch
     {
-        00 or 01 or 02 => AbilityType, // Fixed 0/1/2
+        00 or 01 or 02 => type, // Fixed 0/1/2
         03 or 04 => criteria.GetAbilityFromNumber(Ability), // 0/1 or 0/1/H
-        _ => throw new ArgumentOutOfRangeException(nameof(AbilityType)),
+        _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
     public override AbilityPermission Ability => AbilityType switch
@@ -592,12 +629,8 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
 
         if (!tr.IsShiny(pid, 9))
             return pid;
-        if (IsHOMEGift)
-            return GetAntishinyFixedHOME(tr);
         return pid;
     }
-
-    private static uint GetAntishinyFixedHOME(ITrainerID32 tr) => tr.ID32 ^ 0x10u;
 
     private static uint GetAntishiny(ITrainerID32 tr)
     {
@@ -607,12 +640,12 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         return pid;
     }
 
-    private void SetPID(PKM pk, DateOnly date)
+    private void SetPID(PK9 pk)
     {
         pk.PID = GetPID(pk, PIDType);
     }
 
-    private void SetIVs(PKM pk)
+    private void SetIVs(PK9 pk)
     {
         Span<int> finalIVs = stackalloc int[6];
         GetIVs(finalIVs);
@@ -646,8 +679,8 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         {
             if (OTGender < 2)
             {
-                if (SID16 != pk.SID16) return false;
-                if (TID16 != pk.TID16) return false;
+                var expect = pk.MetDate is { } x && IsBeforePatch200(x) ? ID32Old : ID32;
+                if (expect != pk.ID32) return false;
                 if (OTGender != pk.OT_Gender) return false;
             }
 
@@ -661,26 +694,6 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
             {
                 if (EncryptionConstant != pk.EncryptionConstant)
                     return false;
-            }
-            else if (IsHOMEGift)// 0
-            {
-                // HOME gifts -- PID and EC are zeroes...
-                if (EncryptionConstant != pk.EncryptionConstant)
-                    return false;
-
-                if (pk.TSV == 0) // HOME doesn't assign TSV=0 to accounts.
-                    return false;
-
-                if (IsShiny)
-                {
-                    if (!pk.IsShiny)
-                        return false;
-                }
-                else // Never or Random (HOME ID specific)
-                {
-                    if (pk.IsShiny)
-                        return false;
-                }
             }
         }
 
@@ -714,7 +727,7 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         {
             if (!shinyType.IsValid(pk)) return false;
             if (!IsMatchEggLocation(pk)) return false;
-            if (MetLocation != pk.Met_Location) return false;
+            if (!IsMatchLocation(pk)) return false;
         }
 
         if (MetLevel != 0 && MetLevel != pk.Met_Level) return false;
@@ -723,12 +736,23 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         if (Nature != -1 && pk.Nature != Nature) return false;
         if (Gender != 3 && Gender != pk.Gender) return false;
 
-        if (IsHOMEGift && pk is IScaledSize s)
+        if (pk is IScaledSize s)
         {
-            if (s.HeightScalar != 0)
+            if (!Encounter9RNG.IsHeightMatchSV(pk, HeightValue))
                 return false;
-            if (s.WeightScalar != 0)
+            if (s.WeightScalar != WeightValue)
                 return false;
+
+            if (!IsBeforePatch120(CardID) || (pk.MetDate is { } valid && !IsBeforePatch120(valid)))
+            {
+                // S/V 1.2.0 added scale specification.
+                if (Scale != 256)
+                {
+                    var current = pk is IScaledSize3 s3 ? s3.Scale : s.HeightScalar;
+                    if (Scale != current)
+                        return false;
+                }
+            }
         }
 
         // PID Types 0 and 1 do not use the fixed PID value.
@@ -740,9 +764,30 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         return pk.PID == GetPID(pk, type);
     }
 
-    public bool IsDateRestricted => IsHOMEGift;
+    private bool IsMatchLocation(PKM pk)
+    {
+        var metState = LocationsHOME.GetRemapState(Context, pk.Context);
+        if (metState == LocationRemapState.Original)
+            return IsMatchLocationExact(pk);
+        if (metState == LocationRemapState.Remapped)
+            return IsMatchLocationRemapped(pk);
+        return IsMatchLocationExact(pk) || IsMatchLocationRemapped(pk);
+    }
 
-    protected override bool IsMatchDeferred(PKM pk) => Species != pk.Species;
+    private bool IsMatchLocationExact(PKM pk) => pk.Met_Location == Location;
+
+    private bool IsMatchLocationRemapped(PKM pk)
+    {
+        var met = (ushort)pk.Met_Location;
+        var version = pk.Version;
+        if (pk.Context == EntityContext.Gen8)
+            return LocationsHOME.IsValidMetSV(met, version);
+        return LocationsHOME.GetMetSWSH((ushort)Location, version) == met;
+    }
+
+    public bool IsDateRestricted => true;
+
+    protected override bool IsMatchDeferred(PKM pk) => false;
     protected override bool IsMatchPartial(PKM pk)
     {
         if (pk is ITeraType t && TeraType != t.TeraTypeOriginal)
@@ -860,22 +905,20 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
     public bool RibbonMarkAlpha { get => this.GetRibbonIndex(MarkAlpha); set => this.SetRibbonIndex(MarkAlpha, value); }
     public bool RibbonMarkMightiest { get => this.GetRibbonIndex(MarkMightiest); set => this.SetRibbonIndex(MarkMightiest, value); }
     public bool RibbonMarkTitan { get => this.GetRibbonIndex(MarkTitan); set => this.SetRibbonIndex(MarkTitan, value); }
+    public bool RibbonPartner { get => this.GetRibbonIndex(Partner); set => this.SetRibbonIndex(Partner, value); }
 
     public int GetRibbonByte(int index) => Array.IndexOf(Data, (byte)index, RibbonBytesOffset, RibbonBytesCount);
-    public bool GetRibbon(int index) => GetRibbonByte(index) >= 0;
+    public bool GetRibbon(int index) => RibbonSpan.Contains((byte)index);
 
     public void SetRibbon(int index, bool value = true)
     {
-        if ((uint)index > (uint)MarkSlump)
-            throw new ArgumentOutOfRangeException(nameof(index));
-
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)index, (uint)RibbonIndexExtensions.MAX_G9);
         if (value)
         {
             if (GetRibbon(index))
                 return;
             var openIndex = Array.IndexOf(Data, RibbonByteNone, RibbonBytesOffset, RibbonBytesCount);
-            if (openIndex == -1) // Full?
-                throw new ArgumentOutOfRangeException(nameof(index));
+            ArgumentOutOfRangeException.ThrowIfNegative(openIndex, nameof(openIndex)); // Full?
             SetRibbonAtIndex(openIndex, (byte)index);
         }
         else
@@ -887,4 +930,18 @@ public sealed class WC9 : DataMysteryGift, ILangNick, INature, ITeraType, IRibbo
         }
     }
     #endregion
+
+    public bool IsMissingExtraMark(PKM pk, out RibbonIndex missing)
+    {
+        foreach (var value in RibbonSpan)
+        {
+            missing = (RibbonIndex)value;
+            if (!missing.IsEncounterMark8())
+                continue;
+            if (pk is IRibbonSetMark8 m8 && !m8.HasMark8(missing))
+                return true;
+        }
+        missing = default;
+        return false;
+    }
 }

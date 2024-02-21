@@ -9,6 +9,7 @@ public sealed class LearnGroup1 : ILearnGroup
 {
     public static readonly LearnGroup1 Instance = new();
     private const int Generation = 1;
+    public ushort MaxMoveID => Legal.MaxMoveID_1;
 
     public ILearnGroup? GetPrevious(PKM pk, EvolutionHistory history, IEncounterTemplate enc, LearnOption option) => pk.Context switch
     {
@@ -78,7 +79,7 @@ public sealed class LearnGroup1 : ILearnGroup
             var stage = detail.EvoStage;
             var chain = detail.Generation is 1 ? history.Gen1 : history.Gen2;
             var species2 = chain[stage].Species;
-            if (level2 > level && species2 <= species)
+            if (level2 > level && species2 < species)
                 return true;
         }
 
@@ -87,8 +88,7 @@ public sealed class LearnGroup1 : ILearnGroup
 
     private static void FlagFishyMoveSlots(Span<MoveResult> result, ReadOnlySpan<ushort> current, IEncounterTemplate enc)
     {
-        var occupied = current.Length - current.Count((ushort)0);
-        if (occupied == 4)
+        if (!current.Contains<ushort>(0))
             return;
 
         Span<ushort> moves = stackalloc ushort[4];
@@ -148,16 +148,16 @@ public sealed class LearnGroup1 : ILearnGroup
     {
         if (!ParseSettings.AllowGen1Tradeback)
             return false;
-        var rate = pk1.Catch_Rate;
+        var rate = pk1.CatchRate;
         return rate is 0 || GBRestrictions.IsTradebackCatchRate(rate);
     }
 
     private static void GetEncounterMoves(IEncounterTemplate enc, Span<ushort> moves)
     {
-        if (enc.Version is GameVersion.YW or GameVersion.RBY)
-            LearnSource1YW.Instance.GetEncounterMoves(enc, moves);
-        else
-            LearnSource1RB.Instance.GetEncounterMoves(enc, moves);
+        ILearnSource ls = enc.Version is GameVersion.YW or GameVersion.RBY
+            ? LearnSource1YW.Instance
+            : LearnSource1RB.Instance;
+        ls.SetEncounterMoves(enc.Species, 0, enc.LevelMin, moves);
     }
 
     private static void Check(Span<MoveResult> result, ReadOnlySpan<ushort> current, PKM pk, EvoCriteria evo, int stage, LearnOption option = LearnOption.Current, MoveSourceType types = MoveSourceType.All)

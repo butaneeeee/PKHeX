@@ -6,12 +6,10 @@ namespace PKHeX.Core;
 /// <summary>
 /// <see cref="PersonalInfo"/> class with values from the Black 2 &amp; White 2 games.
 /// </summary>
-public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
+public sealed class PersonalInfo5B2W2(byte[] Data) : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
 {
     public const int SIZE = 0x4C;
-    private readonly byte[] Data;
 
-    public PersonalInfo5B2W2(byte[] data) => Data = data;
     public override byte[] Write() => Data;
 
     public override int HP { get => Data[0x00]; set => Data[0x00] = (byte)value; }
@@ -22,7 +20,7 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
     public override int SPD { get => Data[0x05]; set => Data[0x05] = (byte)value; }
     public override byte Type1 { get => Data[0x06]; set => Data[0x06] = value; }
     public override byte Type2 { get => Data[0x07]; set => Data[0x07] = value; }
-    public override int CatchRate { get => Data[0x08]; set => Data[0x08] = (byte)value; }
+    public override byte CatchRate { get => Data[0x08]; set => Data[0x08] = value; }
     public override int EvoStage { get => Data[0x09]; set => Data[0x09] = (byte)value; }
     private int EVYield { get => ReadUInt16LittleEndian(Data.AsSpan(0x0A)); set => WriteUInt16LittleEndian(Data.AsSpan(0x0A), (ushort)value); }
     public override int EV_HP { get => (EVYield >> 0) & 0x3; set => EVYield = (EVYield & ~(0x3 << 0)) | ((value & 0x3) << 0); }
@@ -84,8 +82,7 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public void SetIsLearnTM(int index, bool value)
     {
-        if ((uint)index >= CountTMHM)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTMHM);
         if (value)
             Data[TMHM + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -101,8 +98,7 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public void SetIsLearnTutorType(int index, bool value)
     {
-        if ((uint)index >= TypeTutorsCount)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, TypeTutorsCount);
         if (value)
             Data[TypeTutors + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -148,14 +144,13 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public bool GetIsLearnTutor1(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves1, move);
+        var index = TutorMoves1.IndexOf(move);
         return index >= 0 && (Data[Tutor1 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor1(int index, bool value)
     {
-        if ((uint)index >= CountTutor1)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor1);
         if (value)
             Data[Tutor1 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -171,14 +166,13 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public bool GetIsLearnTutor2(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves2, move);
+        var index = TutorMoves2.IndexOf(move);
         return index >= 0 && (Data[Tutor2 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor2(int index, bool value)
     {
-        if ((uint)index >= CountTutor2)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor2);
         if (value)
             Data[Tutor2 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -194,14 +188,13 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public bool GetIsLearnTutor3(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves3, move);
+        var index = TutorMoves3.IndexOf(move);
         return index >= 0 && (Data[Tutor3 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor3(int index, bool value)
     {
-        if ((uint)index >= CountTutor3)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor3);
         if (value)
             Data[Tutor3 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -217,14 +210,13 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
 
     public bool GetIsLearnTutor4(ushort move)
     {
-        var index = Array.IndexOf(TutorMoves4, move);
+        var index = TutorMoves4.IndexOf(move);
         return index >= 0 && (Data[Tutor4 + (index >> 3)] & (1 << (index & 7))) != 0;
     }
 
     public void SetIsLearnTutor4(int index, bool value)
     {
-        if ((uint)index >= CountTutor4)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, CountTutor4);
         if (value)
             Data[Tutor4 + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -275,10 +267,10 @@ public sealed class PersonalInfo5B2W2 : PersonalInfo, IPersonalAbility12H, IPers
         }
     }
 
-    private static readonly ushort[] TutorMoves1 = { 450, 343, 162, 530, 324, 442, 402, 529, 340, 067, 441, 253, 009, 007, 008 }; // Driftveil
-    private static readonly ushort[] TutorMoves2 = { 277, 335, 414, 492, 356, 393, 334, 387, 276, 527, 196, 401, 399, 428, 406, 304, 231 }; // Lentimas
-    private static readonly ushort[] TutorMoves3 = { 020, 173, 282, 235, 257, 272, 215, 366, 143, 220, 202, 409, 355 }; // Humilau
-    private static readonly ushort[] TutorMoves4 = { 380, 388, 180, 495, 270, 271, 478, 472, 283, 200, 278, 289, 446, 214, 285 }; // Nacrene
+    private static ReadOnlySpan<ushort> TutorMoves1 =>[ 450, 343, 162, 530, 324, 442, 402, 529, 340, 067, 441, 253, 009, 007, 008 ]; // Driftveil
+    private static ReadOnlySpan<ushort> TutorMoves2 =>[ 277, 335, 414, 492, 356, 393, 334, 387, 276, 527, 196, 401, 399, 428, 406, 304, 231 ]; // Lentimas
+    private static ReadOnlySpan<ushort> TutorMoves3 =>[ 020, 173, 282, 235, 257, 272, 215, 366, 143, 220, 202, 409, 355 ]; // Humilau
+    private static ReadOnlySpan<ushort> TutorMoves4 =>[ 380, 388, 180, 495, 270, 271, 478, 472, 283, 200, 278, 289, 446, 214, 285 ]; // Nacrene
 
     public bool GetIsTutorSpecial(ushort move)
     {

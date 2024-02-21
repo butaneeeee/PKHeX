@@ -13,7 +13,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
 
     public SAV8LA(byte[] data) : this(SwishCrypto.Decrypt(data)) { }
 
-    private SAV8LA(IReadOnlyList<SCBlock> blocks) : base(Array.Empty<byte>())
+    private SAV8LA(IReadOnlyList<SCBlock> blocks) : base([])
     {
         AllBlocks = blocks;
         Blocks = new SaveBlockAccessor8LA(this);
@@ -23,7 +23,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
 
     public SAV8LA()
     {
-        AllBlocks = Meta8.GetBlankDataLA();
+        AllBlocks = BlankBlocks8a.GetBlankBlocks();
         Blocks = new SaveBlockAccessor8LA(this);
         SaveRevision = Blocks.DetectRevision();
         Initialize();
@@ -60,7 +60,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
 
     public override PA8 BlankPKM => new();
     public override Type PKMType => typeof(PA8);
-    public override int MaxEV => 252;
+    public override int MaxEV => EffortValues.Max252;
     public override int Generation => 8;
     public override EntityContext Context => EntityContext.Gen8a;
     public override int MaxStringLengthOT => 12;
@@ -87,7 +87,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
     protected override byte[] GetFinalData() => SwishCrypto.Encrypt(AllBlocks);
 
     public override PersonalTable8LA Personal => PersonalTable.LA;
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_LA;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_LA;
 
     protected override SAV8LA CloneInternal()
     {
@@ -101,7 +101,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
     public override ushort MaxSpeciesID => Legal.MaxSpeciesID_8a;
     public override int MaxItemID => Legal.MaxItemID_8a;
     public override int MaxBallID => Legal.MaxBallID_8a;
-    public override int MaxGameID => Legal.MaxGameID_8a;
+    public override int MaxGameID => Legal.MaxGameID_HOME;
     public override int MaxAbilityID => Legal.MaxAbilityID_8a;
 
     #region Blocks
@@ -117,6 +117,7 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
     public BoxLayout8a BoxLayout => Blocks.BoxLayout;
     public MyItem8a Items => Blocks.Items;
     public Epoch1970Value AdventureStart => Blocks.AdventureStart;
+    public Coordinates8a Coordinates => Blocks.Coordinates;
     public LastSaved8a LastSaved => Blocks.LastSaved;
     public PlayTime8a Played => Blocks.Played;
     public AreaSpawnerSet8a AreaSpawners => new(Blocks.GetBlock(SaveBlockAccessor8LA.KSpawners));
@@ -130,8 +131,8 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
     public override int PlayedMinutes { get => Played.PlayedMinutes; set => Played.PlayedMinutes = (byte)value; }
     public override int PlayedSeconds { get => Played.PlayedSeconds; set => Played.PlayedSeconds = (byte)value; }
 
-    protected override byte[] BoxBuffer => BoxInfo.Data;
-    protected override byte[] PartyBuffer => PartyInfo.Data;
+    protected override Span<byte> BoxBuffer => BoxInfo.Data;
+    protected override Span<byte> PartyBuffer => PartyInfo.Data;
 
     private void Initialize()
     {
@@ -194,12 +195,12 @@ public sealed class SAV8LA : SaveFile, ISaveBlock8LA, ISCBlockArray, ISaveFileRe
 
     public override byte[] BoxFlags
     {
-        get => new[]
-        {
+        get =>
+        [
             Convert.ToByte(Blocks.GetBlock(SaveBlockAccessor8LA.KUnlockedSecretBox01).Type - 1),
             Convert.ToByte(Blocks.GetBlock(SaveBlockAccessor8LA.KUnlockedSecretBox02).Type - 1),
             Convert.ToByte(Blocks.GetBlock(SaveBlockAccessor8LA.KUnlockedSecretBox03).Type - 1),
-        };
+        ];
         set
         {
             if (value.Length != 3)

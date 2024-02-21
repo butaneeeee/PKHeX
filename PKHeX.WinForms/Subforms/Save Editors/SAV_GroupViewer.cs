@@ -37,15 +37,18 @@ public sealed partial class SAV_GroupViewer : Form
         foreach (PictureBox pb in Box.Entries)
         {
             pb.Click += (o, args) => OmniClick(pb, args);
-            pb.MouseHover += (o, args) => HoverSlot(pb, args);
             pb.ContextMenuStrip = mnu;
+            pb.MouseMove += (o, args) => Preview.UpdatePreviewPosition(args.Location);
+            pb.MouseEnter += (o, args) => HoverSlot(pb, args);
+            pb.MouseLeave += (o, args) => Preview.Clear();
         }
+        Closing += (s, e) => Preview.Clear();
     }
 
     private void HoverSlot(object sender, EventArgs e)
     {
         var group = Groups[CurrentGroup];
-        var pb = (PictureBox) sender;
+        var pb = (PictureBox)sender;
         var index = Box.Entries.IndexOf(pb);
         var slot = group.Slots[index];
         Preview.Show(pb, slot);
@@ -150,7 +153,7 @@ public sealed partial class SAV_GroupViewer : Form
         var group = Groups[CurrentGroup];
         View.PopulateFields(group.Slots[index], false);
 
-        if (slotSelected != index && (uint) slotSelected < Box.Entries.Count)
+        if (slotSelected != index && (uint)slotSelected < Box.Entries.Count)
             Box.Entries[slotSelected].BackgroundImage = null;
 
         groupSelected = CurrentGroup;

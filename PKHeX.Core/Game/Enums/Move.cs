@@ -3,7 +3,7 @@ namespace PKHeX.Core;
 /// <summary>
 /// Move IDs for the corresponding English move name.
 /// </summary>
-public enum Move
+public enum Move : ushort
 {
     None,
     Pound,
@@ -880,8 +880,8 @@ public enum Move
     AquaStep,
     RagingBull,
     MakeItRain,
-    _875,
-    _876,
+    Psyblade,
+    HydroSteam,
     Ruination,
     CollisionCourse,
     ElectroDrift,
@@ -906,5 +906,24 @@ public enum Move
     NoxiousTorque,
     CombatTorque,
     MagicalTorque,
+    BloodMoon,
+    MatchaGotcha,
+    SyrupBomb,
+    IvyCudgel,
+    ElectroShot,
+    TeraStarstorm,
+    FickleBeam,
+    BurningBulwark,
+    Thunderclap,
+    MightyCleave,
+    TachyonCutter,
+    HardPress,
+    DragonCheer,
+    AlluringVoice,
+    TemperFlare,
+    SupercellSlam,
+    PsychicNoise,
+    UpperHand,
+    MalignantChain,
     MAX_COUNT,
 }

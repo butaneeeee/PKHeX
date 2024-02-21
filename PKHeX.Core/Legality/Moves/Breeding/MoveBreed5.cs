@@ -22,14 +22,16 @@ public static class MoveBreed5
         if (count == -1)
             count = moves.Length;
 
-        var learn = GameData.GetLearnsets(version);
-        var learnset = learn[species];
+        var learnset = version switch
+        {
+            GameVersion.B or GameVersion.W => LearnSource5BW.Instance.GetLearnset(species, 0),
+            _ => LearnSource5B2W2.Instance.GetLearnset(species, 0),
+        };
         IPersonalInfoTM pi = version switch
         {
             GameVersion.B or GameVersion.W => PersonalTable.BW[species],
             _ => PersonalTable.B2W2[species],
         };
-        var egg = Legal.EggMovesBW[species].Moves;
 
         var actual = MemoryMarshal.Cast<byte, EggSource5>(origins);
         Span<byte> possible = stackalloc byte[count];
@@ -45,6 +47,7 @@ public static class MoveBreed5
         else
         {
             bool inherit = Breeding.GetCanInheritMoves(species);
+            var egg = LearnSource5BW.Instance.GetEggMoves(species, 0);
             MarkMovesForOrigin(value, egg, count, inherit, pi);
             valid = RecurseMovesForOrigin(value, count - 1);
         }
@@ -147,7 +150,7 @@ public static class MoveBreed5
         var possible = value.Possible;
         var learn = value.Learnset;
         var baseEgg = value.Learnset.GetBaseEggMoves(value.Level);
-        var tmlist = LearnSource5.TMHM_BW.AsSpan(0, 95); // actually 96, but TM96 is unavailable (Snarl - Lock Capsule)
+        var tmlist = LearnSource5.TMHM_BW[..^1]; // actually 96, but TM96 is unavailable (Snarl - Lock Capsule)
 
         var moves = value.Moves;
         for (int i = 0; i < count; i++)
@@ -157,7 +160,7 @@ public static class MoveBreed5
             if (baseEgg.IndexOf(move) != -1)
                 possible[i] |= 1 << (int)Base;
 
-            if (inheritLevelUp && learn.GetLevelLearnMove(move) != -1)
+            if (inheritLevelUp && learn.GetIsLearn(move))
                 possible[i] |= 1 << (int)ParentLevelUp;
 
             if (eggMoves.Contains(move))

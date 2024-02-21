@@ -50,8 +50,8 @@ public partial class SuperTrainingEditor : Form
         }
     }
 
-    private readonly List<RegimenInfo> reglist = new();
-    private readonly List<RegimenInfo> distlist = new();
+    private readonly List<RegimenInfo> reglist = [];
+    private readonly List<RegimenInfo> distlist = [];
     private readonly ISuperTrain Entity;
     private const string PrefixCHK = "CHK_";
 
@@ -178,7 +178,7 @@ public partial class SuperTrainingEditor : Form
             return;
         CHK_SecretComplete.Checked &= CHK_SecretUnlocked.Checked;
         CHK_SecretComplete.Enabled = CHK_SecretUnlocked.Checked;
-        foreach (var c in TLP_SuperTrain.Controls.OfType<CheckBox>().Where(chk => Convert.ToInt16(chk.Name[14]+"") >= 4))
+        foreach (var c in TLP_SuperTrain.Controls.OfType<CheckBox>().Where(chk => Convert.ToInt16(chk.Name[14] + "") >= 4))
         {
             c.Enabled = CHK_SecretUnlocked.Checked;
             if (!CHK_SecretUnlocked.Checked)

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PKHeX.Core;
 
@@ -14,22 +15,22 @@ public abstract class GBPKML : GBPKM
     public sealed override int MaxStringLengthNickname => Japanese ? 5 : 10;
     public sealed override bool Japanese => RawOT.Length == StringLengthJapanese;
 
-    internal readonly byte[] RawOT;
-    internal readonly byte[] RawNickname;
+    private readonly byte[] RawOT;
+    private readonly byte[] RawNickname;
 
     // Trash Bytes
     public sealed override Span<byte> Nickname_Trash => RawNickname;
     public sealed override Span<byte> OT_Trash => RawOT;
 
-    protected GBPKML(int size, bool jp = false) : base(size)
+    protected GBPKML([ConstantExpected] int size, bool jp = false) : base(size)
     {
         int strLen = jp ? StringLengthJapanese : StringLengthNotJapan;
 
         // initialize string buffers
         RawOT = new byte[strLen];
         RawNickname = new byte[strLen];
-        RawOT.AsSpan().Fill(StringConverter12.G1TerminatorCode);
-        RawNickname.AsSpan().Fill(StringConverter12.G1TerminatorCode);
+        OT_Trash.Fill(StringConverter12.G1TerminatorCode);
+        Nickname_Trash.Fill(StringConverter12.G1TerminatorCode);
     }
 
     protected GBPKML(byte[] data, bool jp = false) : base(data)
@@ -39,28 +40,32 @@ public abstract class GBPKML : GBPKM
         // initialize string buffers
         RawOT = new byte[strLen];
         RawNickname = new byte[strLen];
-        RawOT.AsSpan().Fill(StringConverter12.G1TerminatorCode);
-        RawNickname.AsSpan().Fill(StringConverter12.G1TerminatorCode);
+        OT_Trash.Fill(StringConverter12.G1TerminatorCode);
+        Nickname_Trash.Fill(StringConverter12.G1TerminatorCode);
     }
 
-    public override void SetNotNicknamed(int language) => GetNonNickname(language).CopyTo(RawNickname);
+    public override void SetNotNicknamed(int language) => GetNonNickname(language, RawNickname);
 
-    protected override byte[] GetNonNickname(int language)
+    protected override void GetNonNickname(int language, Span<byte> data)
     {
         var name = SpeciesName.GetSpeciesNameGeneration(Species, language, Format);
-        var len = Nickname_Trash.Length;
-        byte[] data = new byte[len];
-        SetString(name, data, len, StringConverterOption.Clear50);
-        if (!Korean)
+        SetString(name, data, data.Length, StringConverterOption.Clear50);
+        if (Korean)
+            return;
+
+        // Decimal point<->period fix
+        foreach (ref var c in data)
         {
-            // Decimal point<->period fix
-            for (int i = 0; i < data.Length; i++)
-            {
-                if (data[i] == 0xF2)
-                    data[i] = 0xE8;
-            }
+            if (c == 0xF2)
+                c = 0xE8;
         }
-        return data;
+    }
+
+    private string GetString(ReadOnlySpan<byte> span)
+    {
+        if (Korean)
+            return StringConverter2KOR.GetString(span);
+        return StringConverter12.GetString(span, Japanese);
     }
 
     private int SetString(ReadOnlySpan<char> value, Span<byte> destBuffer, int maxLength, StringConverterOption option = StringConverterOption.None)
@@ -72,45 +77,32 @@ public abstract class GBPKML : GBPKM
 
     public sealed override string Nickname
     {
-        get
-        {
-            if (Korean)
-                return StringConverter2KOR.GetString(RawNickname);
-            return StringConverter12.GetString(RawNickname, Japanese);
-        }
+        get => GetString(Nickname_Trash);
         set
         {
             if (!IsNicknamed && Nickname == value)
                 return;
 
-            SetStringKeepTerminatorStyle(value, RawNickname);
+            SetStringKeepTerminatorStyle(value, Nickname_Trash);
         }
     }
 
     public sealed override string OT_Name
     {
-        get
-        {
-            if (Korean)
-                return StringConverter2KOR.GetString(RawOT);
-            return StringConverter12.GetString(RawOT, Japanese);
-        }
+        get => GetString(OT_Trash);
         set
         {
             if (value == OT_Name)
                 return;
-            SetStringKeepTerminatorStyle(value, RawOT);
+            SetStringKeepTerminatorStyle(value, OT_Trash);
         }
     }
 
     private void SetStringKeepTerminatorStyle(ReadOnlySpan<char> value, Span<byte> exist)
     {
         // Reset the destination buffer based on the termination style of the existing string.
-        bool zeroed = exist.IndexOf((byte)0) != -1;
-        byte fill = zeroed ? (byte)0 : StringConverter12.G1TerminatorCode;
-        exist.Fill(fill);
-
-        int finalLength = Math.Min(value.Length + 1, exist.Length);
-        SetString(value, exist, finalLength);
+        bool zeroed = exist.Contains<byte>(0);
+        StringConverterOption converterOption = (zeroed) ? StringConverterOption.ClearZero : StringConverterOption.Clear50;
+        SetString(value, exist, value.Length, converterOption);
     }
 }

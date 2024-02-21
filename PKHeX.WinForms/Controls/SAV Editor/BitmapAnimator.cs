@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Drawing;
 using System.Timers;
 using System.Windows.Forms;
@@ -42,8 +43,7 @@ public sealed class BitmapAnimator : IDisposable
         }
 
         // reset logic
-        if (GlowCache == null)
-            throw new ArgumentNullException(nameof(GlowCache));
+        ArgumentNullException.ThrowIfNull(GlowCache);
         GlowCounter = 0;
         for (int i = 0; i < GlowCache.Length; i++)
             GlowCache[i] = null;
@@ -90,8 +90,7 @@ public sealed class BitmapAnimator : IDisposable
     private Image GetFrame(int frameIndex)
     {
         var cache = GlowCache;
-        if (cache == null)
-            throw new NullReferenceException(nameof(GlowCache));
+        ArgumentNullException.ThrowIfNull(cache);
         var frame = cache[frameIndex];
         if (frame != null)
             return frame;
@@ -99,12 +98,16 @@ public sealed class BitmapAnimator : IDisposable
         var elapsedFraction = (double)frameIndex / GlowInterval;
         var frameColor = GetFrameColor(elapsedFraction);
 
-        if (GlowData == null)
-            throw new NullReferenceException(nameof(GlowData));
-        var frameData = (byte[])GlowData.Clone();
-        ImageUtil.ChangeAllColorTo(frameData, frameColor);
+        ArgumentNullException.ThrowIfNull(GlowData);
 
-        frame = ImageUtil.GetBitmap(frameData, imgWidth, imgHeight);
+        var frameData = ArrayPool<byte>.Shared.Rent(GlowData.Length);
+        var frameSpan = frameData.AsSpan(0, GlowData.Length);
+        GlowData.AsSpan().CopyTo(frameSpan);
+        ImageUtil.ChangeAllColorTo(frameSpan, frameColor);
+        frame = ImageUtil.GetBitmap(frameData, imgWidth, imgHeight, GlowData.Length);
+        frameSpan.Clear();
+        ArrayPool<byte>.Shared.Return(frameData);
+
         if (ExtraLayer != null)
             frame = ImageUtil.LayerImage(frame, ExtraLayer, 0, 0);
         if (OriginalBackground != null)

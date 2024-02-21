@@ -19,8 +19,12 @@ public enum LearnEnvironment : byte
     /* Gen7 */ SM, USUM, GG,
     /* Gen8 */ SWSH, BDSP, PLA,
     /* Gen9 */ SV,
+    HOME,
 }
 
+/// <summary>
+/// Extension methods for <see cref="LearnEnvironment"/>.
+/// </summary>
 public static class LearnEnvironmentExtensions
 {
     public static bool IsSpecified(this LearnEnvironment value) => value is not None;
@@ -52,6 +56,6 @@ public static class LearnEnvironmentExtensions
         PLA => history.Gen8a,
         BDSP => history.Gen8b,
         SV => history.Gen9,
-        _ => ReadOnlySpan<EvoCriteria>.Empty,
+        _ => [],
     };
 }

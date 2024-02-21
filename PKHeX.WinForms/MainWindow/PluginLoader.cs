@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -13,7 +13,7 @@ public static class PluginLoader
     public static IEnumerable<T> LoadPlugins<T>(string pluginPath, PluginLoadSetting loadSetting) where T : class
     {
         var dllFileNames = !Directory.Exists(pluginPath)
-            ? Array.Empty<string>() // Don't immediately return, as we may be loading plugins merged with this .exe
+            ? [] // Don't immediately return, as we may be loading plugins merged with this .exe
             : Directory.EnumerateFiles(pluginPath, "*.dll", SearchOption.AllDirectories);
         var assemblies = GetAssemblies(dllFileNames, loadSetting);
         var pluginTypes = GetPluginsOfType<T>(assemblies);
@@ -68,47 +68,43 @@ public static class PluginLoader
 
     private static IEnumerable<Type> GetPluginsOfType<T>(IEnumerable<Assembly> assemblies)
     {
-        var interfaceTypeName = typeof(T).FullName;
-        if (interfaceTypeName is null)
-            return Array.Empty<Type>();
-        return assemblies.SelectMany(z => GetPluginTypes(z, interfaceTypeName));
+        var pluginType = typeof(T);
+        return assemblies.SelectMany(z => GetPluginTypes(z, pluginType));
     }
 
-    private static IEnumerable<Type> GetPluginTypes(Assembly z, string interfaceTypeName)
+    private static IEnumerable<Type> GetPluginTypes(Assembly z, Type plugin)
     {
         try
         {
             // Handle Costura merged plugin dll's; need to Attach for them to correctly retrieve their dependencies.
             var assemblyLoaderType = z.GetType("Costura.AssemblyLoader", false);
             var attachMethod = assemblyLoaderType?.GetMethod("Attach", BindingFlags.Static | BindingFlags.Public);
-            attachMethod?.Invoke(null, Array.Empty<object>());
+            attachMethod?.Invoke(null, []);
 
-            var types = z.GetTypes();
-            return types.Where(type => IsTypePlugin(type, interfaceTypeName));
+            var types = z.GetExportedTypes();
+            return types.Where(type => IsTypePlugin(type, plugin));
         }
         // User plugins can be out of date, with mismatching API surfaces.
         catch (Exception ex)
         {
-            Debug.WriteLine($"Unable to load plugin [{interfaceTypeName}]: {z.FullName}");
+            Debug.WriteLine($"Unable to load plugin [{plugin.FullName}]: {z.FullName}");
             Debug.WriteLine(ex.Message);
             if (ex is not ReflectionTypeLoadException rtle)
-                return Array.Empty<Type>();
+                return [];
 
             foreach (var le in rtle.LoaderExceptions)
             {
                 if (le is not null)
                     Debug.WriteLine(le.Message);
             }
-            return Array.Empty<Type>();
+            return [];
         }
     }
 
-    private static bool IsTypePlugin(Type type, string interfaceTypeName)
+    private static bool IsTypePlugin(Type type, Type plugin)
     {
         if (type.IsInterface || type.IsAbstract)
             return false;
-        if (type.GetInterface(interfaceTypeName) == null)
-            return false;
-        return true;
+        return plugin.IsAssignableFrom(type);
     }
 }

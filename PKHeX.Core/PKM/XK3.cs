@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -8,15 +7,13 @@ namespace PKHeX.Core;
 /// <summary> Generation 3 <see cref="PKM"/> format, exclusively for Pokémon XD. </summary>
 public sealed class XK3 : G3PKM, IShadowCapture
 {
-    private static readonly ushort[] Unused =
-    {
+    public override ReadOnlySpan<ushort> ExtraBytes =>
+    [
         0x0A, 0x0B, 0x0C, 0x0D, 0x1E, 0x1F,
         0x2A, 0x2B,
         0x7A, 0x7B,
         0x7E, 0x7F,
-    };
-
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
+    ];
 
     public override int SIZE_PARTY => PokeCrypto.SIZE_3XSTORED;
     public override int SIZE_STORED => PokeCrypto.SIZE_3XSTORED;
@@ -47,7 +44,7 @@ public sealed class XK3 : G3PKM, IShadowCapture
     public override int Stat_Level { get => Data[0x11]; set => Data[0x11] = (byte)value; }
     public override byte CNT_Sheen { get => Data[0x12]; set => Data[0x12] = value; }
     public override int PKRS_Strain { get => Data[0x13] & 0xF; set => Data[0x13] = (byte)(value & 0xF); }
-    public override int MarkValue { get => SwapBits(Data[0x14], 1, 2); set => Data[0x14] = (byte)SwapBits(value, 1, 2); }
+    public override byte MarkingValue { get => (byte)SwapBits(Data[0x14], 1, 2); set => Data[0x14] = (byte)SwapBits(value, 1, 2); }
     public override int PKRS_Days { get => Math.Max((sbyte)Data[0x15], (sbyte)0); set => Data[0x15] = (byte)(value == 0 ? 0xFF : value & 0xF); }
     // 0x16-0x1C Battle Related
     private int XDPKMFLAGS { get => Data[0x1D]; set => Data[0x1D] = (byte)value; }
@@ -201,7 +198,7 @@ public sealed class XK3 : G3PKM, IShadowCapture
     // stored in the data, offset undocumented
     public override int Status_Condition { get; set; }
 
-    public bool IsShadow => Purification != 0;
+    public bool IsShadow { get; internal set; } // determined by savedata, not written back to sav
 
     protected override byte[] Encrypt()
     {

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -8,19 +7,17 @@ namespace PKHeX.Core;
 /// <summary> Generation 5 <see cref="PKM"/> format. </summary>
 public sealed class PK5 : PKM, ISanityChecksum,
     IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetUnique3, IRibbonSetUnique4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetRibbons,
-    IContestStats, IGroundTile
+    IContestStats, IGroundTile, IAppliedMarkings4
 {
-    private static readonly ushort[] Unused =
-    {
+    public override ReadOnlySpan<ushort> ExtraBytes =>
+    [
         0x43, 0x44, 0x45, 0x46, 0x47,
         0x5E, // unused
         0x63, // last 8 bits of a 32bit ribbonset
         0x64, 0x65, 0x66, 0x67, // unused 32bit ribbonset?
         0x86, // unused
         0x87, // PokeStar Fame
-    };
-
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
+    ];
 
     public override int SIZE_PARTY => PokeCrypto.SIZE_5PARTY;
     public override int SIZE_STORED => PokeCrypto.SIZE_5STORED;
@@ -41,7 +38,7 @@ public sealed class PK5 : PKM, ISanityChecksum,
     public override void RefreshChecksum() => Checksum = CalculateChecksum();
     public override bool ChecksumValid => CalculateChecksum() == Checksum;
     public override bool Valid { get => Sanity == 0 && ChecksumValid; set { if (!value) return; Sanity = 0; RefreshChecksum(); } }
-    private ushort CalculateChecksum() => PokeCrypto.GetCHK(Data.AsSpan()[8..PokeCrypto.SIZE_4STORED]);
+    private ushort CalculateChecksum() => Checksums.Add16(Data.AsSpan()[8..PokeCrypto.SIZE_4STORED]);
 
     // Trash Bytes
     public override Span<byte> Nickname_Trash => Data.AsSpan(0x48, 22);
@@ -67,7 +64,7 @@ public sealed class PK5 : PKM, ISanityChecksum,
     public override uint EXP { get => ReadUInt32LittleEndian(Data.AsSpan(0x10)); set => WriteUInt32LittleEndian(Data.AsSpan(0x10), value); }
     public override int OT_Friendship { get => Data[0x14]; set => Data[0x14] = (byte)value; }
     public override int Ability { get => Data[0x15]; set => Data[0x15] = (byte)value; }
-    public override int MarkValue { get => Data[0x16]; set => Data[0x16] = (byte)value; }
+    public byte MarkingValue { get => Data[0x16]; set => Data[0x16] = value; }
     public override int Language { get => Data[0x17]; set => Data[0x17] = (byte)value; }
     public override int EV_HP { get => Data[0x18]; set => Data[0x18] = (byte)value; }
     public override int EV_ATK { get => Data[0x19]; set => Data[0x19] = (byte)value; }
@@ -278,23 +275,7 @@ public sealed class PK5 : PKM, ISanityChecksum,
     // Generated Attributes
     public override uint PSV => ((PID >> 16) ^ (PID & 0xFFFF)) >> 3;
     public override uint TSV => (uint)(TID16 ^ SID16) >> 3;
-
-    public override int Characteristic
-    {
-        get
-        {
-            int pm6 = (int)(PID % 6); // PID
-            int maxIV = MaximumIV;
-            int pm6stat = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                pm6stat = (pm6 + i) % 6;
-                if (GetIV(pm6stat) == maxIV)
-                    break;
-            }
-            return (pm6stat * 5) + (maxIV % 5);
-        }
-    }
+    public override int Characteristic => EntityCharacteristic.GetCharacteristic(PID, IV32);
 
     // Maximums
     public override ushort MaxMoveID => Legal.MaxMoveID_5;
@@ -304,7 +285,7 @@ public sealed class PK5 : PKM, ISanityChecksum,
     public override int MaxBallID => Legal.MaxBallID_5;
     public override int MaxGameID => Legal.MaxGameID_5; // B2
     public override int MaxIV => 31;
-    public override int MaxEV => 255;
+    public override int MaxEV => EffortValues.Max255;
     public override int MaxStringLengthOT => 7;
     public override int MaxStringLengthNickname => 10;
 
@@ -326,21 +307,28 @@ public sealed class PK5 : PKM, ISanityChecksum,
         return false;
     }
 
-    public override int MarkingCount => 6;
+    public int MarkingCount => 6;
 
-    public override int GetMarking(int index)
+    public bool GetMarking(int index)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        return (MarkValue >> index) & 1;
+        return ((MarkingValue >> index) & 1) != 0;
     }
 
-    public override void SetMarking(int index, int value)
+    public void SetMarking(int index, bool value)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        MarkValue = (MarkValue & ~(1 << index)) | ((value & 1) << index);
+        MarkingValue = (byte)((MarkingValue & ~(1 << index)) | ((value ? 1 : 0) << index));
     }
+
+    public bool MarkingCircle   { get => GetMarking(0); set => SetMarking(0, value); }
+    public bool MarkingTriangle { get => GetMarking(1); set => SetMarking(1, value); }
+    public bool MarkingSquare   { get => GetMarking(2); set => SetMarking(2, value); }
+    public bool MarkingHeart    { get => GetMarking(3); set => SetMarking(3, value); }
+    public bool MarkingStar     { get => GetMarking(4); set => SetMarking(4, value); }
+    public bool MarkingDiamond  { get => GetMarking(5); set => SetMarking(5, value); }
 
     public override void RefreshAbility(int n)
     {
@@ -360,7 +348,7 @@ public sealed class PK5 : PKM, ISanityChecksum,
             PID = PID,
             Ability = Ability,
             AbilityNumber = 1 << CalculateAbilityIndex(),
-            MarkValue = MarkValue & 0b_11_1111,
+            MarkingValue = MarkingValue,
             Language = Math.Max((int)LanguageID.Japanese, Language), // Hacked or Bad IngameTrade (Japanese B/W)
 
             CNT_Cool = CNT_Cool,
@@ -370,13 +358,13 @@ public sealed class PK5 : PKM, ISanityChecksum,
             CNT_Tough = CNT_Tough,
             CNT_Sheen = CNT_Sheen,
 
-            // Cap EVs
-            EV_HP = Math.Min(EV_HP, 252),
-            EV_ATK = Math.Min(EV_ATK, 252),
-            EV_DEF = Math.Min(EV_DEF, 252),
-            EV_SPA = Math.Min(EV_SPA, 252),
-            EV_SPD = Math.Min(EV_SPD, 252),
-            EV_SPE = Math.Min(EV_SPE, 252),
+            // Cap EVs -- anything above 252 is dropped down to 252.
+            EV_HP  = Math.Min(EV_HP , EffortValues.Max252),
+            EV_ATK = Math.Min(EV_ATK, EffortValues.Max252),
+            EV_DEF = Math.Min(EV_DEF, EffortValues.Max252),
+            EV_SPA = Math.Min(EV_SPA, EffortValues.Max252),
+            EV_SPD = Math.Min(EV_SPD, EffortValues.Max252),
+            EV_SPE = Math.Min(EV_SPE, EffortValues.Max252),
 
             Move1 = Move1,
             Move2 = Move2,
@@ -557,5 +545,23 @@ public sealed class PK5 : PKM, ISanityChecksum,
         if (Gen5)
             pid >>= 16;
         return (int)(pid & 1);
+    }
+
+    internal static int GetTransferMetLocation4(PKM pk)
+    {
+        // Everything except for crown beasts and Celebi get the default transfer location.
+        // Crown beasts and Celebi are 100% identifiable by the species ID and fateful encounter, originating from Gen4.
+        if (!pk.Gen4 || !pk.FatefulEncounter)
+            return Locations.Transfer4; // Pokétransfer
+
+        return pk.Species switch
+        {
+            // Crown Beast
+            (int)Core.Species.Raikou or (int)Core.Species.Entei or (int)Core.Species.Suicune => Locations.Transfer4_CrownUnused,
+            // Celebi
+            (int)Core.Species.Celebi => Locations.Transfer4_CelebiUnused,
+            // Default
+            _ => Locations.Transfer4,
+        };
     }
 }

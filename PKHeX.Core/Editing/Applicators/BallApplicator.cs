@@ -43,7 +43,7 @@ public static class BallApplicator
         Span<Ball> balls = stackalloc Ball[MaxBallSpanAlloc];
         var count = GetBallListFromColor(pk, balls);
         balls = balls[..count];
-        Util.Shuffle(balls);
+        Util.Rand.Shuffle(balls);
         return ApplyFirstLegalBall(pk, balls);
     }
 
@@ -73,15 +73,17 @@ public static class BallApplicator
         return pk.Ball = (int)next;
     }
 
-    private static int ApplyFirstLegalBall(PKM pk, Span<Ball> balls)
+    private static int ApplyFirstLegalBall(PKM pk, ReadOnlySpan<Ball> balls)
     {
+        var initial = pk.Ball;
         foreach (var b in balls)
         {
-            pk.Ball = (int)b;
+            var test = (int)b;
+            pk.Ball = test;
             if (new LegalityAnalysis(pk).Valid)
-                break;
+                return test;
         }
-        return pk.Ball;
+        return initial; // fail, revert
     }
 
     private static int GetBallList(int ball, Span<Ball> result)
@@ -96,7 +98,7 @@ public static class BallApplicator
         // Gen1/2 don't store color in personal info
         var pi = pk.Format >= 3 ? pk.PersonalInfo : PersonalTable.USUM.GetFormEntry(pk.Species, 0);
         var color = (PersonalColor)pi.Color;
-        var balls = BallColors[color];
+        var balls = BallColors[(int)color];
         var currentBall = (Ball)pk.Ball;
         return GetCircularOnce(balls, currentBall, result);
     }
@@ -106,13 +108,15 @@ public static class BallApplicator
         var currentIndex = Array.IndexOf(items, current);
         if (currentIndex < 0)
             currentIndex = items.Length - 2;
+        return GetCircularOnce(items, currentIndex, result);
+    }
 
-        int ctr = 0;
-        for (int i = currentIndex + 1; i < items.Length; i++)
-            result[ctr++] = items[i];
-        for (int i = 0; i <= currentIndex; i++)
-            result[ctr++] = items[i];
-        return ctr;
+    private static int GetCircularOnce<T>(ReadOnlySpan<T> items, int startIndex, Span<T> result)
+    {
+        var tail = items[(startIndex + 1)..];
+        tail.CopyTo(result);
+        items[..startIndex].CopyTo(result[tail.Length..]);
+        return items.Length;
     }
 
     private static readonly Ball[] BallList = (Ball[])Enum.GetValues(typeof(Ball));
@@ -120,14 +124,15 @@ public static class BallApplicator
 
     static BallApplicator()
     {
-        Span<Ball> exclude = stackalloc Ball[] {None, Poke};
-        Span<Ball> end = stackalloc Ball[] {Poke};
+        ReadOnlySpan<Ball> exclude = [None, Poke];
+        ReadOnlySpan<Ball> end = [Poke];
         Span<Ball> all = stackalloc Ball[BallList.Length - exclude.Length];
         all = all[..FillExcept(all, exclude, BallList)];
 
         var colors = (PersonalColor[])Enum.GetValues(typeof(PersonalColor));
-        foreach (var c in colors)
+        foreach (var color in colors)
         {
+            int c = (int)color;
             // Replace the array reference with a new array that appends non-matching values, followed by the end values.
             var defined = BallColors[c];
             Span<Ball> match = (BallColors[c] = new Ball[all.Length + end.Length]);
@@ -162,20 +167,20 @@ public static class BallApplicator
     /// <summary>
     /// Priority Match ball IDs that match the color ID in descending order
     /// </summary>
-    private static readonly Dictionary<PersonalColor, Ball[]> BallColors = new()
-    {
-        [PersonalColor.Red] =    new[] { Cherish, Repeat, Fast, Heal, Great, Dream, Lure },
-        [PersonalColor.Blue] =   new[] { Dive, Net, Great, Beast, Lure },
-        [PersonalColor.Yellow] = new[] { Level, Ultra, Repeat, Quick, Moon },
-        [PersonalColor.Green] =  new[] { Safari, Friend, Nest, Dusk },
-        [PersonalColor.Black] =  new[] { Luxury, Heavy, Ultra, Moon, Net, Beast },
+    private static readonly Ball[][] BallColors =
+    [
+        /* Red */    [Cherish, Repeat, Fast, Heal, Great, Dream, Lure],
+        /* Blue */   [Dive, Net, Great, Beast, Lure],
+        /* Yellow */ [Level, Ultra, Repeat, Quick, Moon],
+        /* Green */  [Safari, Friend, Nest, Dusk],
+        /* Black */  [Luxury, Heavy, Ultra, Moon, Net, Beast],
 
-        [PersonalColor.Brown] =  new[] { Level, Heavy },
-        [PersonalColor.Purple] = new[] { Master, Love, Dream, Heal },
-        [PersonalColor.Gray] =   new[] { Heavy, Premier, Luxury },
-        [PersonalColor.White] =  new[] { Premier, Timer, Luxury, Ultra },
-        [PersonalColor.Pink] =   new[] { Love, Dream, Heal },
-    };
+        /* Brown */  [Level, Heavy],
+        /* Purple */ [Master, Love, Dream, Heal],
+        /* Gray */   [Heavy, Premier, Luxury],
+        /* White */  [Premier, Timer, Luxury, Ultra],
+        /* Pink */   [Love, Dream, Heal],
+    ];
 
     /// <summary>
     /// Personal Data color IDs

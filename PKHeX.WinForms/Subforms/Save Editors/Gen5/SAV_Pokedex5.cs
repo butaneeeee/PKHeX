@@ -11,13 +11,13 @@ public partial class SAV_Pokedex5 : Form
     private readonly SaveFile Origin;
     private readonly SAV5 SAV;
 
-    public SAV_Pokedex5(SaveFile sav)
+    public SAV_Pokedex5(SAV5 sav)
     {
         InitializeComponent();
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
         SAV = (SAV5)(Origin = sav).Clone();
-        CP = new[] { CHK_P1, CHK_P2, CHK_P3, CHK_P4, CHK_P5, CHK_P6, CHK_P7, CHK_P8, CHK_P9 };
-        CL = new[] { CHK_L1, CHK_L2, CHK_L3, CHK_L4, CHK_L5, CHK_L6, CHK_L7 };
+        CP = [CHK_P1, CHK_P2, CHK_P3, CHK_P4, CHK_P5, CHK_P6, CHK_P7, CHK_P8, CHK_P9];
+        CL = [CHK_L1, CHK_L2, CHK_L3, CHK_L4, CHK_L5, CHK_L6, CHK_L7];
 
         editing = true;
         // Clear Listbox and ComboBox
@@ -70,7 +70,7 @@ public partial class SAV_Pokedex5 : Form
 
     private void ChangeDisplayed(object sender, EventArgs e)
     {
-        if (!((CheckBox) sender).Checked)
+        if (!((CheckBox)sender).Checked)
             return;
 
         CHK_P6.Checked = sender == CHK_P6;
@@ -166,7 +166,7 @@ public partial class SAV_Pokedex5 : Form
         Dex.SetCaught(species, CP[0].Checked);
         for (int i = 0; i < 4; i++)
             Dex.SetSeen(species, i, CP[i + 1].Checked);
-        
+
         for (int i = 0; i < 4; i++)
             Dex.SetDisplayed(species - 1, i, CP[i + 5].Checked);
 
@@ -181,16 +181,16 @@ public partial class SAV_Pokedex5 : Form
         if (f < 0)
             return;
 
-        for (int i = 0; i < CLB_FormsSeen.Items.Count/2; i++) // Seen
+        for (int i = 0; i < CLB_FormsSeen.Items.Count / 2; i++) // Seen
             Dex.SetFormFlag(f + i, 0, CLB_FormsSeen.GetItemChecked(i));
-        for (int i = 0; i < CLB_FormsSeen.Items.Count/2; i++)  // Seen Shiny
-            Dex.SetFormFlag(f + i, 1, CLB_FormsSeen.GetItemChecked(i + (CLB_FormsSeen.Items.Count/2)));
+        for (int i = 0; i < CLB_FormsSeen.Items.Count / 2; i++)  // Seen Shiny
+            Dex.SetFormFlag(f + i, 1, CLB_FormsSeen.GetItemChecked(i + (CLB_FormsSeen.Items.Count / 2)));
 
         editing = true;
-        for (int i = 0; i < CLB_FormDisplayed.Items.Count/2; i++) // Displayed
+        for (int i = 0; i < CLB_FormDisplayed.Items.Count / 2; i++) // Displayed
             Dex.SetFormFlag(f + i, 2, CLB_FormDisplayed.GetItemChecked(i));
-        for (int i = 0; i < CLB_FormDisplayed.Items.Count/2; i++)  // Displayed Shiny
-            Dex.SetFormFlag(f + i, 3, CLB_FormDisplayed.GetItemChecked(i + (CLB_FormDisplayed.Items.Count/2)));
+        for (int i = 0; i < CLB_FormDisplayed.Items.Count / 2; i++)  // Displayed Shiny
+            Dex.SetFormFlag(f + i, 3, CLB_FormDisplayed.GetItemChecked(i + (CLB_FormDisplayed.Items.Count / 2)));
         editing = false;
     }
 
@@ -222,7 +222,7 @@ public partial class SAV_Pokedex5 : Form
         {
             CHK_P1.Checked = ModifierKeys != Keys.Control;
         }
-        int index = LB_Species.SelectedIndex+1;
+        int index = LB_Species.SelectedIndex + 1;
         byte gt = SAV.Personal[index].Gender;
 
         bool canBeMale = gt != PersonalInfo.RatioMagicFemale;

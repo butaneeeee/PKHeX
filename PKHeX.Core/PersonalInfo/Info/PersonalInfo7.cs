@@ -6,12 +6,11 @@ namespace PKHeX.Core;
 /// <summary>
 /// <see cref="PersonalInfo"/> class with values from the Sun &amp; Moon games.
 /// </summary>
-public sealed class PersonalInfo7 : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
+public sealed class PersonalInfo7(byte[] Data)
+    : PersonalInfo, IPersonalAbility12H, IPersonalInfoTM, IPersonalInfoTutorType
 {
     public const int SIZE = 0x54;
-    private readonly byte[] Data;
 
-    public PersonalInfo7(byte[] data) => Data = data;
     public override byte[] Write() => Data;
 
     public override int HP { get => Data[0x00]; set => Data[0x00] = (byte)value; }
@@ -22,7 +21,7 @@ public sealed class PersonalInfo7 : PersonalInfo, IPersonalAbility12H, IPersonal
     public override int SPD { get => Data[0x05]; set => Data[0x05] = (byte)value; }
     public override byte Type1 { get => Data[0x06]; set => Data[0x06] = value; }
     public override byte Type2 { get => Data[0x07]; set => Data[0x07] = value; }
-    public override int CatchRate { get => Data[0x08]; set => Data[0x08] = (byte)value; }
+    public override byte CatchRate { get => Data[0x08]; set => Data[0x08] = value; }
     public override int EvoStage { get => Data[0x09]; set => Data[0x09] = (byte)value; }
     private int EVYield { get => ReadUInt16LittleEndian(Data.AsSpan(0x0A)); set => WriteUInt16LittleEndian(Data.AsSpan(0x0A), (ushort)value); }
     public override int EV_HP { get => (EVYield >> 0) & 0x3; set => EVYield = (EVYield & ~(0x3 << 0)) | ((value & 0x3) << 0); }
@@ -116,8 +115,7 @@ public sealed class PersonalInfo7 : PersonalInfo, IPersonalAbility12H, IPersonal
 
     public void SetIsLearnTutorType(int index, bool value)
     {
-        if ((uint)index >= TypeTutorCount)
-            throw new ArgumentOutOfRangeException(nameof(index), index, null);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual<uint>((uint)index, TypeTutorCount);
         if (value)
             Data[TypeTutor + (index >> 3)] |= (byte)(1 << (index & 7));
         else
@@ -147,7 +145,7 @@ public sealed class PersonalInfo7 : PersonalInfo, IPersonalAbility12H, IPersonal
 
     public bool GetIsLearnTutorSpecial(ushort move)
     {
-        var index = Array.IndexOf(Tutors_USUM, move);
+        var index = Tutors_USUM.IndexOf(move);
         if (index < 0)
             return false;
         return (Data[Tutor1 + (index >> 3)] & (1 << (index & 7))) != 0;
@@ -164,13 +162,13 @@ public sealed class PersonalInfo7 : PersonalInfo, IPersonalAbility12H, IPersonal
         }
     }
 
-    private static readonly ushort[] Tutors_USUM =
-    {
+    private static ReadOnlySpan<ushort> Tutors_USUM =>
+    [
         450, 343, 162, 530, 324, 442, 402, 529, 340, 067, 441, 253, 009, 007, 008,
         277, 335, 414, 492, 356, 393, 334, 387, 276, 527, 196, 401,      428, 406, 304, 231,
         020, 173, 282, 235, 257, 272, 215, 366, 143, 220, 202, 409,      264, 351, 352,
         380, 388, 180, 495, 270, 271, 478, 472, 283, 200, 278, 289, 446,      285,
 
         477, 502, 432, 710, 707, 675, 673,
-    };
+    ];
 }

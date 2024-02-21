@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
 using System.Windows.Forms;
 using PKHeX.Core;
 
@@ -13,7 +12,7 @@ public partial class SAV_CGearSkin : Form
     private readonly SaveFile Origin;
     private readonly SAV5 SAV;
 
-    public SAV_CGearSkin(SaveFile sav)
+    public SAV_CGearSkin(SAV5 sav)
     {
         InitializeComponent();
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
@@ -29,17 +28,13 @@ public partial class SAV_CGearSkin : Form
 
     private void B_ImportPNG_Click(object sender, EventArgs e)
     {
-        using var ofd = new OpenFileDialog
-        {
-            Filter = "PNG File|*.png",
-            FileName = "Background.png",
-        };
-
+        using var ofd = new OpenFileDialog();
+        ofd.Filter = "PNG File|*.png";
+        ofd.FileName = "Background.png";
         if (ofd.ShowDialog() != DialogResult.OK)
             return;
 
-        Bitmap img = (Bitmap)Image.FromFile(ofd.FileName);
-
+        using var img = (Bitmap)Image.FromFile(ofd.FileName);
         try
         {
             bg = CGearImage.GetCGearBackground(img);
@@ -53,25 +48,19 @@ public partial class SAV_CGearSkin : Form
 
     private void B_ExportPNG_Click(object sender, EventArgs e)
     {
-        Image png = PB_Background.Image;
-        using var sfd = new SaveFileDialog
-        {
-            Filter = "PNG File|*.png",
-            FileName = "Background.png",
-        };
-
+        using var sfd = new SaveFileDialog();
+        sfd.Filter = "PNG File|*.png";
+        sfd.FileName = "Background.png";
         if (sfd.ShowDialog() != DialogResult.OK)
             return;
 
-        png.Save(sfd.FileName, ImageFormat.Png);
+        PB_Background.Image.Save(sfd.FileName, ImageFormat.Png);
     }
 
     private void B_ImportCGB_Click(object sender, EventArgs e)
     {
-        using var ofd = new OpenFileDialog
-        {
-            Filter = CGearBackground.Filter + "|PokeStock C-Gear Skin|*.psk",
-        };
+        using var ofd = new OpenFileDialog();
+        ofd.Filter = CGearBackground.Filter + "|PokeStock C-Gear Skin|*.psk";
 
         if (ofd.ShowDialog() != DialogResult.OK)
             return;
@@ -91,24 +80,25 @@ public partial class SAV_CGearSkin : Form
 
     private void B_ExportCGB_Click(object sender, EventArgs e)
     {
-        using var sfd = new SaveFileDialog
-        {
-            Filter = CGearBackground.Filter,
-        };
+        using var sfd = new SaveFileDialog();
+        sfd.Filter = CGearBackground.Filter;
 
         if (sfd.ShowDialog() != DialogResult.OK)
             return;
 
-        byte[] data = bg.GetSkin(true);
+        var data = new byte[CGearBackground.SIZE_CGB];
+        bg.Write(data, true);
         File.WriteAllBytes(sfd.FileName, data);
     }
 
     private void B_Save_Click(object sender, EventArgs e)
     {
-        byte[] bgdata = bg.GetSkin(SAV is SAV5B2W2);
-        if (bgdata.Any(z => z != 0))
+        var data = new byte[CGearBackground.SIZE_CGB];
+        bool cgb = SAV is SAV5B2W2;
+        bg.Write(data, cgb);
+        if (data.AsSpan().ContainsAnyExcept<byte>(0))
         {
-            SAV.CGearSkinData = bgdata;
+            SAV.CGearSkinData = data;
             Origin.CopyChangesFrom(SAV);
         }
         Close();

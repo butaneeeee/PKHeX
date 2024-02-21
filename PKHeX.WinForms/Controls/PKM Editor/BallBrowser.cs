@@ -4,6 +4,7 @@ using System.Windows.Forms;
 
 using PKHeX.Core;
 using PKHeX.Drawing.PokeSprite;
+using PKHeX.WinForms.Controls;
 
 namespace PKHeX.WinForms;
 
@@ -26,7 +27,7 @@ public partial class BallBrowser : Form
             flags[(int)ball] = true;
 
         int countLegal = 0;
-        List<PictureBox> controls = new();
+        List<PictureBox> controls = [];
         var names = GameInfo.BallDataSource;
         for (int ballID = 1; ballID < flags.Length; ballID++)
         {
@@ -61,19 +62,28 @@ public partial class BallBrowser : Form
         throw new ArgumentOutOfRangeException(nameof(ballID));
     }
 
-    private PictureBox GetBallView(int ballID, string name, bool valid)
+    private SelectablePictureBox GetBallView(int ballID, string name, bool valid)
     {
         var img = SpriteUtil.GetBallSprite(ballID);
-        var pb = new PictureBox
+        var pb = new SelectablePictureBox
         {
             Size = img.Size,
             Image = img,
             BackgroundImage = valid ? SpriteUtil.Spriter.Set : SpriteUtil.Spriter.Delete,
             BackgroundImageLayout = ImageLayout.Tile,
+            Name = name,
+            AccessibleDescription = name,
+            AccessibleName = name,
+            AccessibleRole = AccessibleRole.Graphic,
         };
 
         pb.MouseEnter += (_, _) => Text = name;
         pb.Click += (_, _) => SelectBall(ballID);
+        pb.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+                SelectBall(ballID);
+        };
         return pb;
     }
 

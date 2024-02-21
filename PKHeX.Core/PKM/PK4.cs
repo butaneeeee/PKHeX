@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using static System.Buffers.Binary.BinaryPrimitives;
 
@@ -8,12 +7,10 @@ namespace PKHeX.Core;
 /// <summary> Generation 4 <see cref="PKM"/> format. </summary>
 public sealed class PK4 : G4PKM
 {
-    private static readonly ushort[] Unused =
-    {
+    public override ReadOnlySpan<ushort> ExtraBytes =>
+    [
         0x42, 0x43, 0x5E, 0x63, 0x64, 0x65, 0x66, 0x67, 0x87,
-    };
-
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
+    ];
 
     public override int SIZE_PARTY => PokeCrypto.SIZE_4PARTY;
     public override int SIZE_STORED => PokeCrypto.SIZE_4STORED;
@@ -46,7 +43,7 @@ public sealed class PK4 : G4PKM
     public override uint EXP { get => ReadUInt32LittleEndian(Data.AsSpan(0x10)); set => WriteUInt32LittleEndian(Data.AsSpan(0x10), value); }
     public override int OT_Friendship { get => Data[0x14]; set => Data[0x14] = (byte)value; }
     public override int Ability { get => Data[0x15]; set => Data[0x15] = (byte)value; }
-    public override int MarkValue { get => Data[0x16]; set => Data[0x16] = (byte)value; }
+    public override byte MarkingValue { get => Data[0x16]; set => Data[0x16] = value; }
     public override int Language { get => Data[0x17]; set => Data[0x17] = (byte)value; }
     public override int EV_HP { get => Data[0x18]; set => Data[0x18] = (byte)value; }
     public override int EV_ATK { get => Data[0x19]; set => Data[0x19] = (byte)value; }
@@ -116,7 +113,7 @@ public sealed class PK4 : G4PKM
     public override int Move2_PPUps { get => Data[0x35]; set => Data[0x35] = (byte)value; }
     public override int Move3_PPUps { get => Data[0x36]; set => Data[0x36] = (byte)value; }
     public override int Move4_PPUps { get => Data[0x37]; set => Data[0x37] = (byte)value; }
-    public uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x38)); set => WriteUInt32LittleEndian(Data.AsSpan(0x38), value); }
+    protected internal override uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x38)); set => WriteUInt32LittleEndian(Data.AsSpan(0x38), value); }
     public override int IV_HP  { get => (int)(IV32 >> 00) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 00)) | ((value > 31 ? 31u : (uint)value) << 00); }
     public override int IV_ATK { get => (int)(IV32 >> 05) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 05)) | ((value > 31 ? 31u : (uint)value) << 05); }
     public override int IV_DEF { get => (int)(IV32 >> 10) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 10)) | ((value > 31 ? 31u : (uint)value) << 10); }
@@ -317,14 +314,12 @@ public sealed class PK4 : G4PKM
         if (Data[0x5F] < 0x10 && ReadUInt16LittleEndian(Data.AsSpan(0x80)) > 0x4000)
             return new PK5(Data);
 
-        var moment = DateOnly.FromDateTime(DateTime.Now);
-
         PK5 pk5 = new(Data.AsSpan(0, PokeCrypto.SIZE_5PARTY).ToArray()) // Convert away!
         {
             JunkByte = 0,
             OT_Friendship = 70,
             // Apply new met date
-            MetDate = moment,
+            MetDate = EncounterDate.GetDateNDS(),
         };
         pk5.HeldMail.Clear();
 
@@ -346,16 +341,16 @@ public sealed class PK4 : G4PKM
         pk5.Nature = Nature;
 
         // Delete Platinum/HGSS Met Location Data
-        WriteUInt32LittleEndian(pk5.Data.AsSpan(0x44), 0);
+        pk5.Data.AsSpan(0x44, 4).Clear();
 
         // Met / Crown Data Detection
-        pk5.Met_Location = Legal.GetTransfer45MetLocation(pk5);
+        pk5.Met_Location = PK5.GetTransferMetLocation4(pk5);
 
         // Egg Location is not modified; when clearing Pt/HGSS egg data, the location will revert to Faraway Place
         // pk5.Egg_Location = Egg_Location;
 
-        // Delete HGSS Data
-        WriteUInt16LittleEndian(pk5.Data.AsSpan(0x86), 0);
+        // Delete HG/S Data
+        pk5.Data.AsSpan(0x86, 2).Clear();
         pk5.Ball = Ball;
 
         // Transfer Nickname and OT Name, update encoding
@@ -366,7 +361,7 @@ public sealed class PK4 : G4PKM
         pk5.Met_Level = pk5.CurrentLevel;
 
         // Remove HM moves; Defog should be kept if both are learned.
-        // if has defog, remove whirlpool.
+        // If it has Defog, remove Whirlpool.
         bool hasDefog = HasMove((int) Move.Defog);
         var banned = LearnSource4.GetPreferredTransferHMs(hasDefog);
         if (banned.Contains(Move1)) pk5.Move1 = 0;

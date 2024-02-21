@@ -13,8 +13,8 @@ public static class SpeciesName
     /// <summary>
     /// Species name lists indexed by the <see cref="LanguageID"/> value.
     /// </summary>
-    public static readonly IReadOnlyList<IReadOnlyList<string>> SpeciesLang = new[]
-    {
+    private static readonly IReadOnlyList<IReadOnlyList<string>> SpeciesLang =
+    [
         Util.GetSpeciesList("ja"), // 0 (unused, invalid)
         Util.GetSpeciesList("ja"), // 1
         Util.GetSpeciesList("en"), // 2
@@ -26,14 +26,19 @@ public static class SpeciesName
         Util.GetSpeciesList("ko"), // 8
         Util.GetSpeciesList("zh"), // 9 Simplified
         Util.GetSpeciesList("zh2"), // 10 Traditional
-    };
+    ];
+
+    /// <summary>
+    /// Gets the maximum valid species ID stored in the <see cref="SpeciesLang"/> list.
+    /// </summary>
+    public static readonly ushort MaxSpeciesID = (ushort)(SpeciesLang[0].Count - 1);
 
     /// <summary>
     /// Egg name list indexed by the <see cref="LanguageID"/> value.
     /// </summary>
     /// <remarks>Indexing matches <see cref="SpeciesLang"/>.</remarks>
     private static readonly string[] EggNames =
-    {
+    [
         "タマゴ",
         "タマゴ",
         "Egg",
@@ -45,12 +50,30 @@ public static class SpeciesName
         "알",
         "蛋",
         "蛋",
-    };
+    ];
 
     /// <summary>
     /// <see cref="PKM.Nickname"/> to <see cref="Species"/> table for all <see cref="LanguageID"/> values.
     /// </summary>
-    public static readonly IReadOnlyList<Dictionary<string, int>> SpeciesDict = Util.GetMultiDictionary(SpeciesLang, 1);
+    private static readonly Dictionary<int, ushort>[] SpeciesDict = GetDictionary(SpeciesLang);
+
+    private static Dictionary<int, ushort>[] GetDictionary(IReadOnlyList<IReadOnlyList<string>> names)
+    {
+        var result = new Dictionary<int, ushort>[names.Count];
+        for (int i = 0; i < result.Length; i++)
+        {
+            var dict = new Dictionary<int, ushort>();
+            var speciesList = names[i];
+            for (ushort species = 1; species < speciesList.Count; species++)
+            {
+                var name = speciesList[species];
+                var hash = string.GetHashCode(name);
+                dict.Add(hash, species);
+            }
+            result[i] = dict;
+        }
+        return result;
+    }
 
     /// <summary>
     /// Gets a Pokémon's default name for the desired language ID.
@@ -107,9 +130,10 @@ public static class SpeciesName
         var nick = GetSpeciesName(species, language);
         switch (language)
         {
-            case (int)LanguageID.Korean when generation == 2:
-                return StringConverter2KOR.LocalizeKOR2(nick);
             case (int)LanguageID.Korean:
+                if (generation == 2)
+                    StringConverter2KOR.LocalizeKOR2(species, ref nick);
+                return nick; // No further processing
             case (int)LanguageID.Japanese:
                 return nick; // No further processing
         }
@@ -118,8 +142,8 @@ public static class SpeciesName
         nick.CopyTo(result);
 
         // All names are uppercase.
-        for (int i = 0; i < result.Length; i++)
-            result[i] = char.ToUpperInvariant(result[i]);
+        foreach (ref var c in result)
+            c = char.ToUpperInvariant(c);
         if (language == (int)LanguageID.French)
             StringConverter4Util.StripDiacriticsFR4(result); // strips accents on E and I
 
@@ -127,13 +151,21 @@ public static class SpeciesName
         if (generation >= 3)
             return new string(result);
 
-        int indexSpace = result.IndexOf(' ');
-        if (indexSpace != -1)
+        // The only Gen1/2 species with a space is Mr. Mime; different period and no space.
+        if (species == (int)Species.MrMime)
         {
-            // Shift down. Strings have at most 1 occurrence of a space.
-            result[(indexSpace+1)..].CopyTo(result[indexSpace..]);
-            result = result[..^1];
+            int indexSpace = result.IndexOf(StringConverter12.SPH);
+            if (indexSpace > 0)
+            {
+                // Gen1/2 uses a different period for MR.MIME than user input.
+                result[indexSpace - 1] = StringConverter12.DOT;
+
+                // Shift down. Strings have at most 1 occurrence of a space.
+                result[(indexSpace + 1)..].CopyTo(result[indexSpace..]);
+                result = result[..^1];
+            }
         }
+
         return new string(result);
     }
 
@@ -269,19 +301,18 @@ public static class SpeciesName
     /// </summary>
     /// <param name="speciesName">Species Name</param>
     /// <param name="language">Language the name is from</param>
-    /// <returns>Species ID</returns>
-    /// <remarks>Only use this for modern era name -> ID fetching.</remarks>
-    public static int GetSpeciesID(string speciesName, int language = (int)LanguageID.English)
+    /// <param name="species">Species ID</param>
+    /// <returns>True if the species was found, False if not</returns>
+    public static bool TryGetSpecies(ReadOnlySpan<char> speciesName, int language, out ushort species)
     {
-        if (SpeciesDict[language].TryGetValue(speciesName, out var value))
-            return value;
-
-        // stupid ’, ignore language if we match these.
-        return speciesName switch
-        {
-            "Farfetch'd" => (int)Species.Farfetchd,
-            "Sirfetch'd" => (int)Species.Sirfetchd,
-            _ => -1,
-        };
+        // Eventually we'll refactor this once Dictionary<string, ushort> supports ReadOnlySpan<char> fetching in NET 9 runtime/#27229
+        var hash = string.GetHashCode(speciesName);
+        var dict = SpeciesDict[language];
+        if (!dict.TryGetValue(hash, out species))
+            return false;
+        // Double-check the species name
+        var arr = SpeciesLang[language];
+        var expect = arr[species];
+        return speciesName.SequenceEqual(expect);
     }
 }

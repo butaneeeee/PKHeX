@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using PKHeX.Core;
@@ -19,14 +20,17 @@ public partial class SAV_Misc5 : Form
     private ComboBox[] cbr = null!;
     private int ofsFly;
     private int[] FlyDestC = null!;
+    private const int WorkRoamer = 192;
     private const int ofsRoamer = 0x21B00;
     private const int ofsLibPass = 0x212BC;
+    private const int ofsForestCity = 0x1FA00;
+    private const int ofsForestCitySize = 0x1E8;
     private const uint keyLibPass = 2010_04_06; // 0x132B536
     private uint valLibPass;
     private bool bLibPass;
     private const int ofsKS = 0x25828;
 
-    public SAV_Misc5(SaveFile sav)
+    public SAV_Misc5(SAV5 sav)
     {
         InitializeComponent();
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
@@ -37,6 +41,8 @@ public partial class SAV_Misc5 : Form
         LoadForest();
         ReadSubway();
         ReadEntralink();
+        ReadMedals();
+        ReadMusical();
     }
 
     private void B_Cancel_Click(object sender, EventArgs e) => Close();
@@ -52,13 +58,14 @@ public partial class SAV_Misc5 : Form
         Close();
     }
 
-    private readonly uint[] keyKS = {
+    private static ReadOnlySpan<uint> keyKS =>
+    [
         // 0x34525, 0x11963,           // Selected City
         // 0x31239, 0x15657, 0x49589,  // Selected Difficulty
         // 0x94525, 0x81963, 0x38569,  // Selected Mystery Door
         0x35691, 0x18256, 0x59389, 0x48292, 0x09892, // Obtained Keys(EasyMode, Challenge, City, Iron, Iceberg)
         0x93389, 0x22843, 0x34771, 0xAB031, 0xB3818, // Unlocked(EasyMode, Challenge, City, Iron, Iceberg)
-    };
+    ];
 
     private uint[] valKS = null!;
     private bool[] bKS = null!;
@@ -70,22 +77,22 @@ public partial class SAV_Misc5 : Form
         {
             case GameVersion.B or GameVersion.W or GameVersion.BW:
                 ofsFly = 0x204B2;
-                FlyDestA = new[] {
+                FlyDestA = [
                     "Nuvema Town", "Accumula Town", "Striaton City", "Nacrene City",
                     "Castelia City", "Nimbasa City", "Driftveil City", "Mistralton City",
                     "Icirrus City", "Opelucid City", "Victory Road", "Pokemon League",
                     "Lacunosa Town", "Undella Town", "Black City/White Forest", "(Unity Tower)",
-                };
-                FlyDestC = new[] {
+                ];
+                FlyDestC = [
                     0, 1, 2, 3,
                     4, 5, 6, 7,
                     8, 9, 15, 11,
                     10, 13, 12, 14,
-                };
+                ];
                 break;
             case GameVersion.B2 or GameVersion.W2 or GameVersion.B2W2:
                 ofsFly = 0x20392;
-                FlyDestA = new[] {
+                FlyDestA = [
                     "Aspertia City", "Floccesy Town", "Virbank City",
                     "Nuvema Town", "Accumula Town", "Striaton City", "Nacrene City",
                     "Castelia City", "Nimbasa City", "Driftveil City", "Mistralton City",
@@ -93,8 +100,8 @@ public partial class SAV_Misc5 : Form
                     "Lacunosa Town", "Undella Town", "Black City/White Forest",
                     "Lentimas Town", "Humilau City", "Victory Road", "Pokemon League",
                     "Pokestar Studios", "Join Avenue", "PWT", "(Unity Tower)",
-                };
-                FlyDestC = new[] {
+                ];
+                FlyDestC = [
                     24, 27, 25,
                     8, 9, 10, 11,
                     12, 13, 14, 15,
@@ -102,7 +109,7 @@ public partial class SAV_Misc5 : Form
                     18, 21, 20,
                     28, 26, 66, 19,
                     5, 6, 7, 22,
-                };
+                ];
                 break;
 
             default: throw new ArgumentOutOfRangeException(nameof(SAV.Version));
@@ -120,9 +127,10 @@ public partial class SAV_Misc5 : Form
 
         if (SAV is SAV5BW)
         {
+            TC_Misc.TabPages.Remove(TAB_Medals);
             GB_KeySystem.Visible = false;
             // Roamer
-            cbr = new[] { CB_Roamer642, CB_Roamer641 };
+            cbr = [CB_Roamer642, CB_Roamer641];
             // CurrentStat:ComboboxSource
             // Not roamed: Not roamed/Defeated/Captured
             //    Roaming: Roaming/Defeated/Captured
@@ -141,6 +149,22 @@ public partial class SAV_Misc5 : Form
                 cbr[i].SelectedValue = c;
             }
 
+            // Roamer status
+            // If you wish to re-catch thundurus/tornadus,
+            // set the status to "Go to route 7" and head
+            // to the cabin in where old grandpa and grandma live
+            // located at route 7.
+            {
+                var current = SAV.GetWork(WorkRoamer);
+                var states = GetRoamStatusStates();
+                if (states.All(z => z.Value != current))
+                    states.Add(new ComboItem($"Unknown (0x{current:X2})", current));
+                CB_RoamStatus.Items.Clear();
+                CB_RoamStatus.InitializeBinding();
+                CB_RoamStatus.DataSource = new BindingSource(states, null);
+                CB_RoamStatus.SelectedValue = (int)current;
+            }
+
             // LibertyPass
             valLibPass = keyLibPass ^ SAV.ID32;
             bLibPass = ReadUInt32LittleEndian(SAV.Data.AsSpan(ofsLibPass)) == valLibPass;
@@ -148,14 +172,15 @@ public partial class SAV_Misc5 : Form
         }
         else if (SAV is SAV5B2W2)
         {
+            TC_Misc.TabPages.Remove(TAB_BWCityForest);
             GB_Roamer.Visible = CHK_LibertyPass.Visible = false;
             // KeySystem
             string[] KeySystemA =
-            {
+            [
                 "Obtain EasyKey", "Obtain ChallengeKey", "Obtain CityKey", "Obtain IronKey", "Obtain IcebergKey",
                 "Unlock EasyMode", "Unlock ChallengeMode", "Unlock City", "Unlock IronChamber",
                 "Unlock IcebergChamber",
-            };
+            ];
             uint KSID = ReadUInt32LittleEndian(SAV.Data.AsSpan(ofsKS + 0x34));
             valKS = new uint[keyKS.Length];
             bKS = new bool[keyKS.Length];
@@ -169,17 +194,25 @@ public partial class SAV_Misc5 : Form
         }
         else
         {
+            TC_Misc.TabPages.Remove(TAB_BWCityForest);
             GB_KeySystem.Visible = GB_Roamer.Visible = CHK_LibertyPass.Visible = false;
         }
     }
 
-    private static List<ComboItem> GetStates() => new()
-    {
+    private static List<ComboItem> GetStates() =>
+    [
         new ComboItem("Not roamed", 0),
         new ComboItem("Roaming", 1),
         new ComboItem("Defeated", 2),
         new ComboItem("Captured", 3),
-    };
+    ];
+
+    private static List<ComboItem> GetRoamStatusStates() =>
+    [
+        new ComboItem("Not happened", 0),
+        new ComboItem("Go to route 7", 1),
+        new ComboItem("Event finished", 3),
+    ];
 
     private void SaveMain()
     {
@@ -216,6 +249,14 @@ public partial class SAV_Misc5 : Form
                     continue;
                 SAV.Data.AsSpan(ofsRoamer + 4 + (i * 0x14), 14).Clear();
                 SAV.Data[ofsRoamer + 0x2C + i] = 0;
+            }
+
+            // RoamStatus
+            {
+                int current = SAV.GetWork(192);
+                var desired = (ushort)WinFormsUtil.GetIndex(CB_RoamStatus);
+                if (current != desired)
+                    SAV.SetWork(WorkRoamer, desired);
             }
 
             // LibertyPass
@@ -258,10 +299,10 @@ public partial class SAV_Misc5 : Form
 
         if (SAV is SAV5B2W2 b2w2)
         {
-            var pass = (Entralink5B2W2) entree;
+            var pass = (Entralink5B2W2)entree;
             var ppv = (PassPower5[])Enum.GetValues(typeof(PassPower5));
             var ppn = Enum.GetNames(typeof(PassPower5));
-            ComboItem[] PassPowerB = ppn.Zip(ppv, (f, s) => new ComboItem(f, (int)s)).OrderBy(z => z.Text).ToArray();
+            ComboItem[] PassPowerB = [.. ppn.Zip(ppv, (f, s) => new ComboItem(f, (int)s)).OrderBy(z => z.Text)];
             var cba = new[] { CB_PassPower1, CB_PassPower2, CB_PassPower3 };
             foreach (var cb in cba)
             {
@@ -288,7 +329,7 @@ public partial class SAV_Misc5 : Form
             LB_FunfestMissions.Items.AddRange(FMTitles);
 
             CB_FMLevel.Items.Clear();
-            CB_FMLevel.Items.AddRange(new[] { "Lv.1", "Lv.2 +", "Lv.3 ++", "Lv.3 +++" });
+            CB_FMLevel.Items.AddRange(["Lv.1", "Lv.2 +", "Lv.3 ++", "Lv.3 +++"]);
             SetNudMax();
             SetEntreeExpTooltip();
             LB_FunfestMissions.SelectedIndex = 0;
@@ -385,9 +426,9 @@ public partial class SAV_Misc5 : Form
 
     private void LoadFestaMissionRecord()
     {
-        FestaBlock5 block = ((SAV5B2W2) SAV).Festa;
+        FestaBlock5 block = ((SAV5B2W2)SAV).Festa;
         int mission = LB_FunfestMissions.SelectedIndex;
-        if ((uint) mission > FestaBlock5.MaxMissionIndex)
+        if ((uint)mission > FestaBlock5.MaxMissionIndex)
             return;
         bool unlocked = block.IsFunfestMissionUnlocked(mission);
         L_FMUnlocked.Visible = unlocked;
@@ -463,7 +504,7 @@ public partial class SAV_Misc5 : Form
         CHK_Area9.Checked = Forest.Unlock9thArea;
 
         var areas = AllSlots.Select(z => z.Area).Distinct()
-            .Select(z => new ComboItem(z.ToString(), (int) z)).ToList();
+            .Select(z => new ComboItem(z.ToString(), (int)z)).ToList();
 
         CB_Species.InitializeBinding();
         CB_Move.InitializeBinding();
@@ -479,7 +520,7 @@ public partial class SAV_Misc5 : Form
 
     private void SaveForest()
     {
-        Forest.Unlock38Areas = (int) NUD_Unlocked.Value - 2;
+        Forest.Unlock38Areas = (int)NUD_Unlocked.Value - 2;
         Forest.Unlock9thArea = CHK_Area9.Checked;
         SAV.EntreeData = Forest;
     }
@@ -490,7 +531,7 @@ public partial class SAV_Misc5 : Form
     private void ChangeArea(object sender, EventArgs e)
     {
         var area = WinFormsUtil.GetIndex(CB_Areas);
-        CurrentSlots = AllSlots.Where(z => (int) z.Area == area).ToArray();
+        CurrentSlots = AllSlots.Where(z => (int)z.Area == area).ToArray();
         LB_Slots.Items.Clear();
         foreach (var z in CurrentSlots.Select(z => GetSpeciesName(z.Species)))
             LB_Slots.Items.Add(z);
@@ -583,7 +624,7 @@ public partial class SAV_Misc5 : Form
             source.Remove(slot);
             s.Species = slot.Species;
             s.Form = slot.Form;
-            s.Gender = slot.Gender == -1 ? PersonalTable.B2W2[slot.Species].RandomGender() : slot.Gender;
+            s.Gender = slot.Gender == FixedGenderUtil.GenderRandom ? PersonalTable.B2W2[slot.Species].RandomGender() : slot.Gender;
 
             slot.Moves.CopyTo(moves);
             var count = moves.Length - moves.Count((ushort)0);
@@ -720,10 +761,143 @@ public partial class SAV_Misc5 : Form
         sw.SuperMultiFriendsRecord = (int)NUD_SMultiFriendsRecord.Value;
     }
 
-    private void B_UnlockAllMusicalProps_Click(object sender, EventArgs e)
+    private const string ForestCityBinFilter = "Forest City Bin|*.fc5";
+    private const string ForestCityBinPath = "{0}.fc5";
+
+    private void B_DumpFC_Click(object sender, EventArgs e)
+    {
+        using var sfd = new SaveFileDialog();
+        sfd.Filter = ForestCityBinFilter;
+        sfd.FileName = string.Format(ForestCityBinPath, SAV.Version);
+        if (sfd.ShowDialog() != DialogResult.OK)
+            return;
+
+        var data = SAV.Data.AsSpan(ofsForestCity, ofsForestCitySize).ToArray();
+        File.WriteAllBytes(sfd.FileName, data);
+    }
+
+    private void B_ImportFC_Click(object sender, EventArgs e)
+    {
+        using var ofd = new OpenFileDialog();
+        ofd.Filter = ForestCityBinFilter;
+        ofd.FileName = string.Format(ForestCityBinPath, SAV.Version);
+        if (ofd.ShowDialog() != DialogResult.OK)
+            return;
+
+        var fi = new FileInfo(ofd.FileName);
+        if (fi.Length != ofsForestCitySize)
+        {
+            WinFormsUtil.Alert(string.Format(MessageStrings.MsgFileSizeIncorrect, fi.Length, ofsForestCitySize));
+            return;
+        }
+
+        var data = File.ReadAllBytes(ofd.FileName);
+        SAV.SetData(data, ofsForestCity);
+    }
+
+    private readonly string[] MedalNames = Util.GetStringList("medals", Main.CurrentLanguage);
+
+    private void ReadMedals()
+    {
+        if (SAV is SAV5B2W2)
+        {
+            CB_CurrentMedal.Items.AddRange(MedalNames);
+            CB_MedalState.Items.AddRange(["Unobtained", "Can Obtain Hint Medal", "Hint Medal Obtained", "Can Obtain Medal", "Medal Obtained"]);
+            CB_CurrentMedal.SelectedIndex = 0;
+        }
+    }
+
+    private void CB_CurrentMedal_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        if (SAV is SAV5B2W2 b2w2)
+        {
+            var medal = b2w2.Medals[CB_CurrentMedal.SelectedIndex];
+            CB_MedalState.SelectedIndex = (int)medal.State;
+            if (medal.CanHaveDate)
+            {
+                CAL_MedalDate.Value = medal.Date.ToDateTime(new TimeOnly());
+                CAL_MedalDate.Enabled = true;
+            }
+            else
+            {
+                CAL_MedalDate.Enabled = false;
+                CAL_MedalDate.ValueChanged -= CAL_MedalDate_ValueChanged;
+                CAL_MedalDate.Value = EncounterDate.GetDateNDS().ToDateTime(new TimeOnly());
+                CAL_MedalDate.ValueChanged += CAL_MedalDate_ValueChanged;
+            }
+            CHK_MedalUnread.Checked = medal.IsUnread;
+        }
+    }
+
+    private void CB_MedalState_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        if (SAV is SAV5B2W2 b2w2)
+        {
+            var medal = b2w2.Medals[CB_CurrentMedal.SelectedIndex];
+            medal.State = (Medal5State)CB_MedalState.SelectedIndex;
+            if (medal.CanHaveDate)
+            {
+                if (!medal.HasDate)
+                    medal.Date = EncounterDate.GetDateNDS();
+                CAL_MedalDate.Enabled = true;
+            }
+            else
+            {
+                CAL_MedalDate.Enabled = false;
+            }
+        }
+    }
+
+    private void CAL_MedalDate_ValueChanged(object? sender, EventArgs e)
+    {
+        if (SAV is SAV5B2W2 b2w2)
+        {
+            var medal = b2w2.Medals[CB_CurrentMedal.SelectedIndex];
+            medal.Date = DateOnly.FromDateTime(CAL_MedalDate.Value);
+        }
+    }
+
+    private void CHK_MedalUnread_CheckedChanged(object sender, EventArgs e)
+    {
+        if (SAV is SAV5B2W2 b2w2)
+        {
+            var medal = b2w2.Medals[CB_CurrentMedal.SelectedIndex];
+            medal.IsUnread = CHK_MedalUnread.Checked;
+        }
+    }
+
+    private void B_ObtainAllMedals_Click(object sender, EventArgs e)
+    {
+        if (SAV is SAV5B2W2 b2w2)
+        {
+            var now = EncounterDate.GetDateNDS();
+            b2w2.Medals.ObtainAll(now, unread: true);
+            System.Media.SystemSounds.Asterisk.Play();
+        }
+    }
+
+    private readonly string[] PropNames = Util.GetStringList("props", Main.CurrentLanguage);
+
+    private void ReadMusical()
+    {
+        CB_Prop.Items.AddRange(PropNames);
+        CB_Prop.SelectedIndex = 0;
+    }
+
+    private void CB_Prop_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        CHK_PropObtained.Checked = SAV.Musical.GetHasProp(CB_Prop.SelectedIndex);
+    }
+
+    private void CHK_PropObtained_CheckedChanged(object sender, EventArgs e)
+    {
+        SAV.Musical.SetHasProp(CB_Prop.SelectedIndex, CHK_PropObtained.Checked);
+    }
+
+    private void B_UnlockAllProps_Click(object sender, EventArgs e)
     {
         SAV.Musical.UnlockAllMusicalProps();
-        B_UnlockAllMusicalProps.Enabled = false;
+        B_UnlockAllProps.Enabled = false;
         System.Media.SystemSounds.Asterisk.Play();
     }
 }

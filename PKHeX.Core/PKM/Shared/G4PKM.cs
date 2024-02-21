@@ -1,13 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PKHeX.Core;
 
 /// <summary> Generation 4 <see cref="PKM"/> format. </summary>
 public abstract class G4PKM : PKM,
-    IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetUnique3, IRibbonSetUnique4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetRibbons, IContestStats, IGroundTile
+    IRibbonSetEvent3, IRibbonSetEvent4, IRibbonSetUnique3, IRibbonSetUnique4, IRibbonSetCommon3, IRibbonSetCommon4, IRibbonSetRibbons, IContestStats, IGroundTile, IAppliedMarkings4
 {
     protected G4PKM(byte[] data) : base(data) { }
-    protected G4PKM(int size) : base(size) { }
+    protected G4PKM([ConstantExpected] int size) : base(size) { }
 
     // Maximums
     public sealed override ushort MaxMoveID => Legal.MaxMoveID_4;
@@ -17,38 +18,23 @@ public abstract class G4PKM : PKM,
     public sealed override int MaxBallID => Legal.MaxBallID_4;
     public sealed override int MaxGameID => Legal.MaxGameID_4;
     public sealed override int MaxIV => 31;
-    public sealed override int MaxEV => 255;
+    public sealed override int MaxEV => EffortValues.Max255;
     public sealed override int MaxStringLengthOT => 7;
     public sealed override int MaxStringLengthNickname => 10;
 
-    public sealed override uint PSV => (((PID >> 16) ^ (PID & 0xFFFF)) >> 3);
+    public sealed override uint PSV => ((PID >> 16) ^ (PID & 0xFFFF)) >> 3;
     public sealed override uint TSV => (uint)(TID16 ^ SID16) >> 3;
 
     protected bool PtHGSS => Pt || HGSS;
-
-    public sealed override int Characteristic
-    {
-        get
-        {
-            int pm6 = (int)(EncryptionConstant % 6); // PID
-            int maxIV = MaximumIV;
-            int pm6stat = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                pm6stat = (pm6 + i) % 6;
-                if (GetIV(pm6stat) == maxIV)
-                    break;
-            }
-            return (pm6stat * 5) + (maxIV % 5);
-        }
-    }
+    protected internal abstract uint IV32 { get; set; }
+    public override int Characteristic => EntityCharacteristic.GetCharacteristic(PID, IV32);
 
     public abstract ushort Sanity { get; set; }
     public abstract ushort Checksum { get; set; }
     public sealed override void RefreshChecksum() => Checksum = CalculateChecksum();
     public sealed override bool ChecksumValid => CalculateChecksum() == Checksum;
     public override bool Valid { get => Sanity == 0 && ChecksumValid; set { if (!value) return; Sanity = 0; RefreshChecksum(); } }
-    protected virtual ushort CalculateChecksum() => PokeCrypto.GetCHK(Data.AsSpan()[8..PokeCrypto.SIZE_4STORED]);
+    protected virtual ushort CalculateChecksum() => Checksums.Add16(Data.AsSpan()[8..PokeCrypto.SIZE_4STORED]);
 
     // Trash Bytes
     public sealed override Span<byte> Nickname_Trash => Data.AsSpan(0x48, 22);
@@ -176,21 +162,29 @@ public abstract class G4PKM : PKM,
     public abstract byte BallDPPt { get; set; }
     public abstract byte BallHGSS { get; set; }
     public abstract byte PokeathlonStat { get; set; }
-    public override int MarkingCount => 6;
+    public int MarkingCount => 6;
+    public abstract byte MarkingValue { get; set; }
 
-    public override int GetMarking(int index)
+    public bool GetMarking(int index)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        return (MarkValue >> index) & 1;
+        return ((MarkingValue >> index) & 1) != 0;
     }
 
-    public override void SetMarking(int index, int value)
+    public void SetMarking(int index, bool value)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        MarkValue = (MarkValue & ~(1 << index)) | ((value & 1) << index);
+        MarkingValue = (byte)((MarkingValue & ~(1 << index)) | ((value ? 1 : 0) << index));
     }
+
+    public bool MarkingCircle   { get => GetMarking(0); set => SetMarking(0, value); }
+    public bool MarkingTriangle { get => GetMarking(1); set => SetMarking(1, value); }
+    public bool MarkingSquare   { get => GetMarking(2); set => SetMarking(2, value); }
+    public bool MarkingHeart    { get => GetMarking(3); set => SetMarking(3, value); }
+    public bool MarkingStar     { get => GetMarking(4); set => SetMarking(4, value); }
+    public bool MarkingDiamond  { get => GetMarking(5); set => SetMarking(5, value); }
 
     public abstract ushort Egg_LocationDP { get; set; }
     public abstract ushort Egg_LocationExtended { get; set; }
@@ -271,7 +265,7 @@ public abstract class G4PKM : PKM,
         {
             static byte Clamp(int value, Ball max) => (uint)value <= (uint)max ? (byte)value : (byte)Core.Ball.Poke;
 
-            // Ball to display in DPPt
+            // Ball to display in D/P/Pt
             BallDPPt = Clamp(value, Core.Ball.Cherish);
 
             // Only set the HG/SS value if it originated in HG/SS and was not an event.
@@ -294,7 +288,7 @@ public abstract class G4PKM : PKM,
         return false;
     }
 
-    // Enforce DP content only (no PtHGSS)
+    // Enforce D/P content only (no Pt or HG/SS)
     protected void StripPtHGSSContent(PKM pk)
     {
         if (Form != 0 && !PersonalTable.DP[Species].HasForms && Species != 201)

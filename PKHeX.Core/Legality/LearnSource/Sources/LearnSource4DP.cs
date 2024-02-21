@@ -2,19 +2,17 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using static PKHeX.Core.LearnMethod;
 using static PKHeX.Core.LearnEnvironment;
-using static PKHeX.Core.LearnSource4;
 
 namespace PKHeX.Core;
 
 /// <summary>
 /// Exposes information about how moves are learned in <see cref="DP"/>.
 /// </summary>
-public sealed class LearnSource4DP : ILearnSource<PersonalInfo4>, IEggSource
+public sealed class LearnSource4DP : LearnSource4, ILearnSource<PersonalInfo4>, IEggSource
 {
     public static readonly LearnSource4DP Instance = new();
     private static readonly PersonalTable4 Personal = PersonalTable.DP;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpDP;
-    private static readonly EggMoves6[] EggMoves = Legal.EggMovesDPPt;
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("lvlmove_dp.pkl"), "dp"u8));
     private const int MaxSpecies = Legal.MaxSpeciesID_4;
     private const LearnEnvironment Game = DP;
     private const int Generation = 4;
@@ -42,7 +40,7 @@ public sealed class LearnSource4DP : ILearnSource<PersonalInfo4>, IEggSource
     public ReadOnlySpan<ushort> GetEggMoves(ushort species, byte form)
     {
         if (species > MaxSpecies)
-            return ReadOnlySpan<ushort>.Empty;
+            return [];
         return EggMoves[species].Moves;
     }
 
@@ -73,18 +71,18 @@ public sealed class LearnSource4DP : ILearnSource<PersonalInfo4>, IEggSource
         return default;
     }
 
-    private static bool GetIsTypeTutor(ushort species, ushort move)
+    private static bool GetIsTypeTutor(ushort species, ushort move) => move switch
     {
-        var index = Array.IndexOf(SpecialTutors_4, move);
-        if (index == -1)
-            return false;
-        var list = SpecialTutors_Compatibility_4[index].AsSpan();
-        return list.IndexOf(species) != -1;
-    }
+        (ushort)Move.BlastBurn => SpecialTutors_Compatibility_4_BlastBurn.Contains(species),
+        (ushort)Move.HydroCannon => SpecialTutors_Compatibility_4_HydroCannon.Contains(species),
+        (ushort)Move.FrenzyPlant => SpecialTutors_Compatibility_4_FrenzyPlant.Contains(species),
+        (ushort)Move.DracoMeteor => SpecialTutors_Compatibility_4_DracoMeteor.Contains(species),
+        _ => false,
+    };
 
     private static bool GetIsSpecialTutor(PersonalInfo4 pi, ushort move)
     {
-        var index = Array.IndexOf(Tutors_4, move);
+        var index = Tutors_4.IndexOf(move);
         if (index == -1)
             return false;
         return pi.TypeTutors[index];
@@ -92,13 +90,13 @@ public sealed class LearnSource4DP : ILearnSource<PersonalInfo4>, IEggSource
 
     private static bool GetIsTM(PersonalInfo4 info, ushort move)
     {
-        var index = Array.IndexOf(TM_4, move);
+        var index = TM_4.IndexOf(move);
         return info.GetIsLearnTM(index);
     }
 
     private static bool GetIsHM(PersonalInfo4 info, ushort move)
     {
-        var index = Array.IndexOf(HM_DPPt, move);
+        var index = HM_DPPt.IndexOf(move);
         return info.GetIsLearnTM(CountTM + index);
     }
 
@@ -110,13 +108,9 @@ public sealed class LearnSource4DP : ILearnSource<PersonalInfo4>, IEggSource
         if (types.HasFlag(MoveSourceType.LevelUp))
         {
             var learn = GetLearnset(evo.Species, evo.Form);
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(evo.LevelMax);
-            if (hasMoves)
-            {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                    result[moves[i]] = true;
-            }
+            var span = learn.GetMoveRange(evo.LevelMax);
+            foreach (var move in span)
+                result[move] = true;
         }
 
         if (types.HasFlag(MoveSourceType.Machine))

@@ -16,7 +16,9 @@ public static class TypeColor
     /// <param name="type">Type to get the color of.</param>
     /// <returns>Color of the type.</returns>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
-    public static Color GetTypeSpriteColor(byte type) => (MoveType)type switch
+    public static Color GetTypeSpriteColor(byte type) => ((MoveType)type).GetTypeSpriteColor();
+
+    public static Color GetTypeSpriteColor(this MoveType type) => type switch
     {
         Normal   => Color.FromArgb(159, 161, 159),
         Fighting => Color.FromArgb(255, 128, 000),
@@ -38,4 +40,19 @@ public static class TypeColor
         Fairy    => Color.FromArgb(239, 113, 239),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
+
+    /// <summary>
+    /// Color to show for a <see cref="MoveType"/> of <see cref="TeraTypeUtil.Stellar"/>.
+    /// </summary>
+    public static Color Stellar => Color.LightYellow;
+
+    /// <summary>
+    /// Gets the color of a <see cref="MoveType"/> for a Tera sprite.
+    /// </summary>
+    public static Color GetTeraSpriteColor(byte elementalType)
+    {
+        if (elementalType == TeraTypeUtil.Stellar)
+            return Stellar;
+        return GetTypeSpriteColor(elementalType);
+    }
 }

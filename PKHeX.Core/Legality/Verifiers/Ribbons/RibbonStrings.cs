@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace PKHeX.Core;
@@ -7,14 +8,16 @@ namespace PKHeX.Core;
 /// </summary>
 public static class RibbonStrings
 {
-    private static readonly Dictionary<string, string> RibbonNames = new();
+    private static readonly Dictionary<string, string> RibbonNames = [];
 
     /// <summary>
     /// Resets the Ribbon Dictionary to use the supplied set of Ribbon (Property) Names.
     /// </summary>
     /// <param name="lines">Array of strings that are tab separated with Property Name, \t, and Display Name.</param>
-    public static void ResetDictionary(IEnumerable<string> lines)
+    public static void ResetDictionary(ReadOnlySpan<string> lines)
     {
+        RibbonNames.EnsureCapacity(lines.Length);
+
         // Don't clear existing keys on reset; only update.
         // A language will have the same keys (hopefully), only with differing values.
         foreach (var line in lines)
@@ -22,8 +25,8 @@ public static class RibbonStrings
             var index = line.IndexOf('\t');
             if (index < 0)
                 continue;
-            var name = line[..index];
             var text = line[(index + 1)..];
+            var name = line[..index];
             RibbonNames[name] = text;
         }
     }

@@ -10,6 +10,7 @@ public sealed class LearnGroup8 : ILearnGroup
     public static readonly LearnGroup8 Instance = new();
     private const int Generation = 8;
     private const EntityContext Context = EntityContext.Gen8;
+    public ushort MaxMoveID => Legal.MaxMoveID_8;
 
     public ILearnGroup? GetPrevious(PKM pk, EvolutionHistory history, IEncounterTemplate enc, LearnOption option)
     {
@@ -45,10 +46,16 @@ public sealed class LearnGroup8 : ILearnGroup
 
         CheckSharedMoves(result, current, evos[0]);
 
-        if (option is not LearnOption.Current && types.HasFlag(MoveSourceType.Encounter) && pk.IsOriginalMovesetDeleted() && enc is EncounterEgg { Generation: Generation } egg)
+        if (option.IsPast() && types.HasFlag(MoveSourceType.Encounter) && pk.IsOriginalMovesetDeleted() && enc is EncounterEgg { Generation: Generation } egg)
             CheckEncounterMoves(result, current, egg);
 
-        return MoveResult.AllParsed(result);
+        if (MoveResult.AllParsed(result))
+            return true;
+
+        var home = LearnGroupHOME.Instance;
+        if (option != LearnOption.HOME && home.HasVisited(pk, history))
+            return home.Check(result, current, pk, history, enc, types);
+        return false;
     }
 
     private static void CheckSharedMoves(Span<MoveResult> result, ReadOnlySpan<ushort> current, EvoCriteria evo)
@@ -72,10 +79,8 @@ public sealed class LearnGroup8 : ILearnGroup
     private static void CheckEncounterMoves(Span<MoveResult> result, ReadOnlySpan<ushort> current, EncounterEgg egg)
     {
         var game = LearnSource8SWSH.Instance;
-        ReadOnlySpan<ushort> eggMoves = game.GetEggMoves(egg.Species, egg.Form);
-        ReadOnlySpan<ushort> levelMoves = egg.CanInheritMoves
-            ? game.GetLearnset(egg.Species, egg.Form).Moves
-            : ReadOnlySpan<ushort>.Empty;
+        var eggMoves = game.GetEggMoves(egg.Species, egg.Form);
+        var levelMoves = ((ILearnSource)game).GetInheritMoves(egg.Species, egg.Form);
 
         for (var i = result.Length - 1; i >= 0; i--)
         {
@@ -145,6 +150,10 @@ public sealed class LearnGroup8 : ILearnGroup
 
         foreach (var evo in evos)
             GetAllMoves(result, pk, evo, types, option);
+
+        var home = LearnGroupHOME.Instance;
+        if (option != LearnOption.HOME && home.HasVisited(pk, history))
+            home.GetAllMoves(result, pk, history, enc, types);
     }
 
     private static void GetAllMoves(Span<bool> result, PKM pk, EvoCriteria evo, MoveSourceType types, LearnOption option)

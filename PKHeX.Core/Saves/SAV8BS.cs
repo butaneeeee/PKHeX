@@ -106,7 +106,7 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
     public override Type PKMType => typeof(PB8);
 
     public override int BoxCount => BoxLayout8b.BoxCount;
-    public override int MaxEV => 252;
+    public override int MaxEV => EffortValues.Max252;
 
     public override int Generation => 8;
     public override EntityContext Context => EntityContext.Gen8b;
@@ -117,7 +117,7 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
     public override ushort MaxSpeciesID => Legal.MaxSpeciesID_8b;
     public override int MaxItemID => Legal.MaxItemID_8b;
     public override int MaxBallID => Legal.MaxBallID_8b;
-    public override int MaxGameID => Legal.MaxGameID_8a;
+    public override int MaxGameID => Legal.MaxGameID_HOME;
     public override int MaxAbilityID => Legal.MaxAbilityID_8b;
 
     public bool HasFirstSaveFileExpansion => (Gem8Version)SaveRevision >= Gem8Version.V1_1;
@@ -131,7 +131,7 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
 
     public string SaveRevisionString => ((Gem8Version)SaveRevision).GetSuffixString();
 
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_BS;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_BS;
     protected override SAV8BS CloneInternal() => new((byte[])(Data.Clone()));
 
     protected override byte[] GetFinalData()
@@ -283,7 +283,7 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
 
     public string Rival
     {
-        get => GetString(0x55F4, 0x1A);
+        get => GetString(Data.AsSpan(0x55F4, 0x1A));
         set => SetString(Data.AsSpan(0x55F4, 0x1A), value, MaxStringLengthOT, StringConverterOption.ClearZero);
     }
 
@@ -309,8 +309,8 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
     {
         var pb8 = (PB8)pk;
         // Apply to this Save File
-        DateTime Date = DateTime.Now;
-        pb8.Trade(this, Date.Day, Date.Month, Date.Year);
+        var now = EncounterDate.GetDateSwitch();
+        pb8.Trade(this, now.Day, now.Month, now.Year);
 
         pb8.RefreshChecksum();
         AddCountAcquired(pb8);
@@ -333,7 +333,7 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
     }
 
     public override PB8 GetDecryptedPKM(byte[] data) => GetPKM(DecryptPKM(data));
-    public override PB8 GetBoxSlot(int offset) => GetDecryptedPKM(GetData(Data, offset, SIZE_PARTY)); // party format in boxes!
+    public override PB8 GetBoxSlot(int offset) => GetDecryptedPKM(Data.AsSpan(offset, SIZE_PARTY).ToArray()); // party format in boxes!
 
     public enum TopMenuItemType
     {

@@ -32,7 +32,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
 
     public SAV3XD() : base(SaveUtil.SIZE_G3XD)
     {
-        BAK = Array.Empty<byte>();
+        BAK = [];
         // create fake objects
         StrategyMemo = new StrategyMemo();
         ShadowInfo = new ShadowInfoTableXD(false);
@@ -55,7 +55,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
     }
 
     public override PersonalTable3 Personal => PersonalTable.RS;
-    public override IReadOnlyList<ushort> HeldItems => Legal.HeldItems_XD;
+    public override ReadOnlySpan<ushort> HeldItems => Legal.HeldItems_RS;
 
     private readonly bool Japanese;
 
@@ -131,7 +131,9 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
         // Count up how many party slots are active.
         for (int i = 0; i < 6; i++)
         {
-            if (GetPartySlot(Data, GetPartyOffset(i)).Species != 0)
+            var ofs = GetPartyOffset(i);
+            var span = Data.AsSpan(ofs);
+            if (ReadUInt16BigEndian(span) != 0) // species is at offset 0x00
                 PartyCount++;
         }
     }
@@ -186,7 +188,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
     public override int MaxItemID => Legal.MaxItemID_3_XD;
     public override int MaxGameID => Legal.MaxGameID_3;
 
-    public override int MaxEV => 255;
+    public override int MaxEV => EffortValues.Max255;
     public override int Generation => 3;
     public override EntityContext Context => EntityContext.Gen3;
     protected override int GiftCountMax => 1;
@@ -226,8 +228,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
 
     private static byte[] SetChecksums(byte[] input, int subOffset0)
     {
-        if (input.Length != SLOT_SIZE)
-            throw new ArgumentException("Input should be a slot, not the entire save binary.");
+        ArgumentOutOfRangeException.ThrowIfNotEqual(input.Length, SLOT_SIZE);
 
         byte[] data = (byte[])input.Clone();
         const int start = 0xA8; // 0x88 + 0x20
@@ -320,7 +321,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
 
     // Trainer Info
     public override GameVersion Version { get => GameVersion.XD; protected set { } }
-    public override string OT { get => GetString(Trainer1 + 0x00, 20); set => SetString(Data.AsSpan(Trainer1 + 0x00, 20), value, 10, StringConverterOption.ClearZero); }
+    public override string OT { get => GetString(Data.AsSpan(Trainer1 + 0x00, 20)); set => SetString(Data.AsSpan(Trainer1 + 0x00, 20), value, 10, StringConverterOption.ClearZero); }
     public override uint ID32 { get => ReadUInt32BigEndian(Data.AsSpan(Trainer1 + 0x2C)); set => WriteUInt32BigEndian(Data.AsSpan(Trainer1 + 0x2C), value); }
     public override ushort SID16 { get => ReadUInt16BigEndian(Data.AsSpan(Trainer1 + 0x2C)); set => WriteUInt16BigEndian(Data.AsSpan(Trainer1 + 0x2C), value); }
     public override ushort TID16 { get => ReadUInt16BigEndian(Data.AsSpan(Trainer1 + 0x2E)); set => WriteUInt16BigEndian(Data.AsSpan(Trainer1 + 0x2E), value); }
@@ -333,7 +334,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
     public override int GetPartyOffset(int slot) => Party + (SIZE_STORED * slot);
     private int GetBoxInfoOffset(int box) => Box + (((30 * SIZE_STORED) + 0x14) * box);
     public override int GetBoxOffset(int box) => GetBoxInfoOffset(box) + 20;
-    public override string GetBoxName(int box) => GetString(GetBoxInfoOffset(box), 16);
+    public override string GetBoxName(int box) => GetString(Data.AsSpan(GetBoxInfoOffset(box), 16));
 
     public override void SetBoxName(int box, ReadOnlySpan<char> value)
     {
@@ -348,14 +349,21 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
     }
 
     protected override byte[] DecryptPKM(byte[] data) => data;
-    public override XK3 GetPartySlot(byte[] data, int offset) => GetStoredSlot(data, offset);
+    public override XK3 GetPartySlot(ReadOnlySpan<byte> data) => GetStoredSlot(data);
 
-    public override XK3 GetStoredSlot(byte[] data, int offset)
+    public override XK3 GetStoredSlot(ReadOnlySpan<byte> data)
     {
         // Get Shadow Data
-        var pk = (XK3)base.GetStoredSlot(data, offset);
-        if (pk.ShadowID > 0 && pk.ShadowID < ShadowInfo.Count)
-            pk.Purification = ShadowInfo[pk.ShadowID].Purification;
+        var pk = (XK3)base.GetStoredSlot(data);
+
+        // Get Shadow Data from save
+        var id = pk.ShadowID;
+        if (id == 0 || id >= ShadowInfo.Count)
+            return pk;
+
+        var entry = ShadowInfo[pk.ShadowID];
+        pk.Purification = entry.Purification;
+        pk.IsShadow = !entry.IsPurified;
         return pk;
     }
 
@@ -368,12 +376,14 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
         xk3.OriginalRegion = (byte)OriginalRegion;
 
         // Set Shadow Data back to save
-        if (xk3.ShadowID <= 0 || xk3.ShadowID >= ShadowInfo.Count)
+        var id = xk3.ShadowID;
+        if (id == 0 || id >= ShadowInfo.Count)
             return;
 
-        var entry = ShadowInfo[xk3.ShadowID];
+        var entry = ShadowInfo[id];
         entry.Purification = xk3.Purification;
-        entry.Species = xk3.Species;
+      //entry.IsPurified = !xk3.IsShadow;
+      //entry.Species = xk3.Species;
         entry.PID = xk3.PID;
         entry.IV_HP  = xk3.IV_HP ;
         entry.IV_ATK = xk3.IV_ATK;
@@ -413,16 +423,17 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile
     {
         get
         {
+            var info = ItemStorage3XD.Instance;
             InventoryPouch[] pouch =
-            {
-                new InventoryPouch3GC(InventoryType.Items, Legal.Pouch_Items_XD, 999, OFS_PouchHeldItem, 30), // 20 COLO, 30 XD
-                new InventoryPouch3GC(InventoryType.KeyItems, Legal.Pouch_Key_XD, 1, OFS_PouchKeyItem, 43),
-                new InventoryPouch3GC(InventoryType.Balls, Legal.Pouch_Ball_RS, 999, OFS_PouchBalls, 16),
-                new InventoryPouch3GC(InventoryType.TMHMs, Legal.Pouch_TM_RS, 999, OFS_PouchTMHM, 64),
-                new InventoryPouch3GC(InventoryType.Berries, Legal.Pouch_Berries_RS, 999, OFS_PouchBerry, 46),
-                new InventoryPouch3GC(InventoryType.Medicine, Legal.Pouch_Cologne_XD, 999, OFS_PouchCologne, 3), // Cologne
-                new InventoryPouch3GC(InventoryType.BattleItems, Legal.Pouch_Disc_XD, 1, OFS_PouchDisc, 60),
-            };
+            [
+                new InventoryPouch3GC(InventoryType.Items, info, 999, OFS_PouchHeldItem, 30), // 20 COLO, 30 XD
+                new InventoryPouch3GC(InventoryType.KeyItems, info, 1, OFS_PouchKeyItem, 43),
+                new InventoryPouch3GC(InventoryType.Balls, info, 999, OFS_PouchBalls, 16),
+                new InventoryPouch3GC(InventoryType.TMHMs, info, 999, OFS_PouchTMHM, 64),
+                new InventoryPouch3GC(InventoryType.Berries, info, 999, OFS_PouchBerry, 46),
+                new InventoryPouch3GC(InventoryType.Medicine, info, 999, OFS_PouchCologne, 3), // Cologne
+                new InventoryPouch3GC(InventoryType.BattleItems, info, 1, OFS_PouchDisc, 60),
+            ];
             return pouch.LoadAll(Data);
         }
         set => value.SaveAll(Data);

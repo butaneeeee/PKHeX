@@ -1,15 +1,14 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using static System.Buffers.Binary.BinaryPrimitives;
 
 namespace PKHeX.Core;
 
 /// <summary> Generation 7 <see cref="PKM"/> format used for <see cref="GameVersion.GG"/>. </summary>
-public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, ICombatPower, IFavorite, IFormArgument
+public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, ICombatPower, IFavorite, IFormArgument, IAppliedMarkings7
 {
-    public static readonly ushort[] Unused =
-    {
+    public override ReadOnlySpan<ushort> ExtraBytes =>
+    [
         0x2A, // Old Marking Value (PelagoEventStatus)
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, // Unused Ribbons
         0x58, 0x59, // Nickname Terminator
@@ -19,9 +18,7 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
         0xA7, 0xAA, 0xAB,
         0xAC, 0xAD, // Fatigue, no GUI editing
         0xC8, 0xC9, // OT Terminator
-    };
-
-    public override IReadOnlyList<ushort> ExtraBytes => Unused;
+    ];
 
     public override int SIZE_PARTY => SIZE;
     public override int SIZE_STORED => SIZE;
@@ -101,7 +98,7 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
     public override int Ability { get => Data[0x14]; set => Data[0x14] = (byte)value; }
     public override int AbilityNumber { get => Data[0x15] & 7; set => Data[0x15] = (byte)((Data[0x15] & ~7) | (value & 7)); }
     public bool IsFavorite { get => (Data[0x15] & 8) != 0; set => Data[0x15] = (byte)((Data[0x15] & ~8) | ((value ? 1 : 0) << 3)); }
-    public override int MarkValue { get => ReadUInt16LittleEndian(Data.AsSpan(0x16)); set => WriteUInt16LittleEndian(Data.AsSpan(0x16), (ushort)value); }
+    public ushort MarkingValue { get => ReadUInt16LittleEndian(Data.AsSpan(0x16)); set => WriteUInt16LittleEndian(Data.AsSpan(0x16), value); }
 
     public override uint PID
     {
@@ -206,7 +203,7 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
 
     // 0x72 Unused
     // 0x73 Unused
-    private uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x74)); set => WriteUInt32LittleEndian(Data.AsSpan(0x74), value); }
+    protected override uint IV32 { get => ReadUInt32LittleEndian(Data.AsSpan(0x74)); set => WriteUInt32LittleEndian(Data.AsSpan(0x74), value); }
     public override int IV_HP { get => (int)(IV32 >> 00) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 00)) | ((value > 31 ? 31u : (uint)value) << 00); }
     public override int IV_ATK { get => (int)(IV32 >> 05) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 05)) | ((value > 31 ? 31u : (uint)value) << 05); }
     public override int IV_DEF { get => (int)(IV32 >> 10) & 0x1F; set => IV32 = (IV32 & ~(0x1Fu << 10)) | ((value > 31 ? 31u : (uint)value) << 10); }
@@ -312,22 +309,29 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
     // 102/103 unused
     #endregion
 
-    public override int MarkingCount => 6;
+    public int MarkingCount => 6;
 
-    public override int GetMarking(int index)
+    public MarkingColor GetMarking(int index)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
-        return (MarkValue >> (index * 2)) & 3;
+        return (MarkingColor)((MarkingValue >> (index * 2)) & 3);
     }
 
-    public override void SetMarking(int index, int value)
+    public void SetMarking(int index, MarkingColor value)
     {
         if ((uint)index >= MarkingCount)
             throw new ArgumentOutOfRangeException(nameof(index));
         var shift = index * 2;
-        MarkValue = (MarkValue & ~(0b11 << shift)) | ((value & 3) << shift);
+        MarkingValue = (ushort)((MarkingValue & ~(0b11 << shift)) | (((byte)value & 3) << shift));
     }
+
+    public MarkingColor MarkingCircle   { get => GetMarking(0); set => SetMarking(0, value); }
+    public MarkingColor MarkingTriangle { get => GetMarking(1); set => SetMarking(1, value); }
+    public MarkingColor MarkingSquare   { get => GetMarking(2); set => SetMarking(2, value); }
+    public MarkingColor MarkingHeart    { get => GetMarking(3); set => SetMarking(3, value); }
+    public MarkingColor MarkingStar     { get => GetMarking(4); set => SetMarking(4, value); }
+    public MarkingColor MarkingDiamond  { get => GetMarking(5); set => SetMarking(5, value); }
 
     protected override bool TradeOT(ITrainerInfo tr)
     {
@@ -399,51 +403,8 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
     private static int GetStat(int baseStat, int iv, int level, int nature, int statIndex)
     {
         int initial = GetStat(baseStat, iv, level) + 5;
-        return AmplifyStat(nature, statIndex, initial);
+        return NatureAmp.AmplifyStat(nature, statIndex, initial);
     }
-
-    private static int AmplifyStat(int nature, int index, int initial) => GetNatureAmp(nature, index) switch
-    {
-        1 => 110 * initial / 100, // 110%
-        -1 => 90 * initial / 100, // 90%
-        _ => initial,
-    };
-
-    private static sbyte GetNatureAmp(int nature, int index)
-    {
-        if ((uint)nature >= 25)
-            return -1;
-        return NatureAmpTable[(5 * nature) + index];
-    }
-
-    private static ReadOnlySpan<sbyte> NatureAmpTable => new sbyte[]
-    {
-        0, 0, 0, 0, 0, // Hardy
-        1,-1, 0, 0, 0, // Lonely
-        1, 0, 0, 0,-1, // Brave
-        1, 0,-1, 0, 0, // Adamant
-        1, 0, 0,-1, 0, // Naughty
-       -1, 1, 0, 0, 0, // Bold
-        0, 0, 0, 0, 0, // Docile
-        0, 1, 0, 0,-1, // Relaxed
-        0, 1,-1, 0, 0, // Impish
-        0, 1, 0,-1, 0, // Lax
-       -1, 0, 0, 0, 1, // Timid
-        0,-1, 0, 0, 1, // Hasty
-        0, 0, 0, 0, 0, // Serious
-        0, 0,-1, 0, 1, // Jolly
-        0, 0, 0,-1, 1, // Naive
-       -1, 0, 1, 0, 0, // Modest
-        0,-1, 1, 0, 0, // Mild
-        0, 0, 1, 0,-1, // Quiet
-        0, 0, 0, 0, 0, // Bashful
-        0, 0, 1,-1, 0, // Rash
-       -1, 0, 0, 1, 0, // Calm
-        0,-1, 0, 1, 0, // Gentle
-        0, 0, 0, 1,-1, // Sassy
-        0, 0,-1, 1, 0, // Careful
-        0, 0, 0, 0, 0, // Quirky
-    };
 
     public int CalcCP => Math.Min(10000, AwakeCP + BaseCP);
 
@@ -568,7 +529,9 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
         result *= 255f;
         int value = (int)result;
         int unsigned = value & ~(value >> 31);
-        return (byte)Math.Min(255, unsigned);
+        if (unsigned > 255)
+            unsigned = 255;
+        return (byte)unsigned;
     }
 
     [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
@@ -585,7 +548,9 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
         result *= 255f;
         int value = (int)result;
         int unsigned = value & ~(value >> 31);
-        return (byte)Math.Min(255, unsigned);
+        if (unsigned > 255)
+            unsigned = 255;
+        return (byte)unsigned;
     }
 
     public static int GetRandomIndex(int bits, int characterIndex, int nature)
@@ -594,7 +559,7 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
             return GetRandomIndex(characterIndex);
         if (bits is 0)
             return 0;
-        var amps = NatureAmpTable.Slice(5 * nature, 5);
+        var amps = NatureAmp.GetAmps(nature);
         if (amps[bits - 1] != -1) // not a negative stat
             return bits;
 
@@ -612,79 +577,4 @@ public sealed class PB7 : G6PKM, IHyperTrain, IAwakened, IScaledSizeValue, IComb
         5 => 4,
         _ => throw new ArgumentOutOfRangeException(nameof(characterIndex)), // never happens, characteristic is always 0-29
     };
-
-    public PK8 ConvertToPK8()
-    {
-        var pk8 = new PK8
-        {
-            EncryptionConstant = EncryptionConstant,
-            Species = Species,
-            TID16 = TID16,
-            SID16 = SID16,
-            EXP = EXP,
-            PID = PID,
-            Ability = Ability,
-            AbilityNumber = AbilityNumber,
-            MarkValue = MarkValue & 0b1111_1111_1111,
-            Language = Language,
-            EV_HP = EV_HP,
-            EV_ATK = EV_ATK,
-            EV_DEF = EV_DEF,
-            EV_SPA = EV_SPA,
-            EV_SPD = EV_SPD,
-            EV_SPE = EV_SPE,
-            Move1 = Move1,
-            Move2 = Move2,
-            Move3 = Move3,
-            Move4 = Move4,
-            Move1_PPUps = Move1_PPUps,
-            Move2_PPUps = Move2_PPUps,
-            Move3_PPUps = Move3_PPUps,
-            Move4_PPUps = Move4_PPUps,
-            RelearnMove1 = RelearnMove1,
-            RelearnMove2 = RelearnMove2,
-            RelearnMove3 = RelearnMove3,
-            RelearnMove4 = RelearnMove4,
-            IV_HP = IV_HP,
-            IV_ATK = IV_ATK,
-            IV_DEF = IV_DEF,
-            IV_SPA = IV_SPA,
-            IV_SPD = IV_SPD,
-            IV_SPE = IV_SPE,
-            IsNicknamed = IsNicknamed,
-            FatefulEncounter = FatefulEncounter,
-            Gender = Gender,
-            Form = Form,
-            Nature = Nature,
-            Nickname = Nickname,
-            Version = Version,
-            OT_Name = OT_Name,
-            MetDate = MetDate,
-            Met_Location = Met_Location,
-            Ball = Ball,
-            Met_Level = Met_Level,
-            OT_Gender = OT_Gender,
-            HyperTrainFlags = HyperTrainFlags,
-
-            // Memories don't exist in LGPE, and no memories are set on transfer.
-
-            OT_Friendship = OT_Friendship,
-
-            // No Ribbons or Markings on transfer.
-
-            StatNature = Nature,
-            HeightScalar = HeightScalar,
-            WeightScalar = WeightScalar,
-
-            IsFavorite = IsFavorite,
-        };
-
-        // Fix PP and Stats
-        pk8.Heal();
-
-        // Fix Checksum
-        pk8.RefreshChecksum();
-
-        return pk8; // Done!
-    }
 }

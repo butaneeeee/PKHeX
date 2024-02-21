@@ -73,7 +73,7 @@ public sealed class HistoryVerifier : Verifier
                 if (pk.HT_Name != tr.OT)
                     data.AddLine(GetInvalid(LTransferHTMismatchName));
                 if (pk is IHandlerLanguage h && h.HT_Language != tr.Language)
-                    data.AddLine(GetInvalid(LTransferHTMismatchLanguage));
+                    data.AddLine(Get(LTransferHTMismatchLanguage, Severity.Fishy));
             }
         }
 
@@ -86,7 +86,7 @@ public sealed class HistoryVerifier : Verifier
     private static bool IsUntradeableEncounter(IEncounterTemplate enc) => enc switch
     {
         EncounterStatic7b { Location: 28 } => true, // LGP/E Starter
-        EncounterStatic9  { Species: 998 or 999, Level: 68 } => true, // SV Ride legend
+        EncounterStatic9  { Species: 998 or 999, Level: 68 } => true, // S/V Ride legend
         _ => false,
     };
 
@@ -129,7 +129,7 @@ public sealed class HistoryVerifier : Verifier
         // Verify the original friendship value since it cannot change from the value it was assigned in the original generation.
         // Since some evolutions have different base friendship values, check all possible evolutions for a match.
         // If none match, then it is not a valid OT friendship.
-        // VC transfers use SM personal info
+        // VC transfers use S/M personal info
         var any = IsMatchFriendship(data.Info.EvoChainsAllGens.Gen7, pk.OT_Friendship);
         if (!any)
             data.AddLine(GetInvalid(LMemoryStatFriendshipOTBaseEvent));
@@ -192,34 +192,6 @@ public sealed class HistoryVerifier : Verifier
         var htGender = pk.HT_Gender;
         if (htGender > 1 || (pk.IsUntraded && htGender != 0))
             data.AddLine(GetInvalid(string.Format(LMemoryHTGender, htGender)));
-
-        if (pk is IHandlerLanguage h)
-            VerifyHTLanguage(data, h, pk);
-    }
-
-    private void VerifyHTLanguage(LegalityAnalysis data, IHandlerLanguage h, PKM pk)
-    {
-        var enc = data.EncounterOriginal;
-        if (enc is EncounterStatic9 { GiftWithLanguage: true })
-        {
-            if (h.HT_Language == 0)
-                data.AddLine(GetInvalid(LMemoryHTLanguage));
-            else if (pk.IsUntraded && h.HT_Language != pk.Language)
-                data.AddLine(GetInvalid(LMemoryHTLanguage));
-            return;
-        }
-
-        if (h.HT_Language == 0)
-        {
-            if (!string.IsNullOrWhiteSpace(pk.HT_Name))
-                data.AddLine(GetInvalid(LMemoryHTLanguage));
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(pk.HT_Name))
-            data.AddLine(GetInvalid(LMemoryHTLanguage));
-        else if (h.HT_Language > (int)LanguageID.ChineseT)
-            data.AddLine(GetInvalid(LMemoryHTLanguage));
     }
 
     private void VerifyGeoLocationData(LegalityAnalysis data, IGeoTrack t, PKM pk)
@@ -233,7 +205,7 @@ public sealed class HistoryVerifier : Verifier
             data.AddLine(GetInvalid(LGeoNoCountryHT));
     }
 
-    // ORAS contests mistakenly apply 20 affection to the OT instead of the current handler's value
+    // OR/AS contests mistakenly apply 20 affection to the OT instead of the current handler's value
     private static bool IsInvalidContestAffection(IAffection pk) => pk.OT_Affection != 255 && pk.OT_Affection % 20 != 0;
 
     public static bool GetCanOTHandle(IEncounterTemplate enc, PKM pk, int generation)
@@ -244,10 +216,11 @@ public sealed class HistoryVerifier : Verifier
 
         return enc switch
         {
-            EncounterTrade => false,
+            IFixedTrainer { IsFixedTrainer: true } => false,
             EncounterSlot8GO => false,
             WC6 { OT_Name.Length: > 0 } => false,
             WC7 { OT_Name.Length: > 0, TID16: not 18075 } => false, // Ash Pikachu QR Gift doesn't set Current Handler
+            WB7 wb7 when wb7.GetHasOT(pk.Language) => false,
             WC8 wc8 when wc8.GetHasOT(pk.Language) => false,
             WB8 wb8 when wb8.GetHasOT(pk.Language) => false,
             WA8 wa8 when wa8.GetHasOT(pk.Language) => false,

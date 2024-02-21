@@ -72,6 +72,12 @@ public static class QRMessageUtil
         return GetMessageBase64(data, server);
     }
 
+    /// <summary>
+    /// Gets a QR Message from the input <see cref="byte"/> data.
+    /// </summary>
+    /// <param name="data">Data to include in the payload</param>
+    /// <param name="server">Website URL that sources the payload</param>
+    /// <returns>QR Message</returns>
     public static string GetMessageBase64(ReadOnlySpan<byte> data, string server)
     {
         string payload = Convert.ToBase64String(data);
@@ -106,7 +112,7 @@ public static class QRMessageUtil
         // Decode unicode string -- size might be pretty big (user input), so just rent instead of stackalloc
         var tmp = ArrayPool<byte>.Shared.Rent(url.Length);
         var result = Convert.TryFromBase64Chars(url, tmp, out int bytesWritten) ? tmp[..bytesWritten] : null;
-        ArrayPool<byte>.Shared.Return(tmp);
+        ArrayPool<byte>.Shared.Return(tmp, true);
         return result;
     }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using static PKHeX.Core.GameVersion;
 
 namespace PKHeX.Core.Searching;
@@ -33,16 +34,17 @@ public sealed class SearchSettings
 
     public CloneDetectionMethod SearchClones { get; set; }
     public string BatchInstructions { get; init; } = string.Empty;
-    private IReadOnlyList<StringInstruction> BatchFilters { get; set; } = Array.Empty<StringInstruction>();
+    private IReadOnlyList<StringInstruction> BatchFilters { get; set; } = [];
+    private IReadOnlyList<StringInstruction> BatchFiltersMeta { get; set; } = [];
 
-    public readonly List<ushort> Moves = new();
+    public readonly List<ushort> Moves = [];
 
     // ReSharper disable once CollectionNeverUpdated.Global
     /// <summary>
     /// Extra Filters to be checked after all other filters have been checked.
     /// </summary>
     /// <remarks>Collection is iterated right before clones are checked.</remarks>
-    public List<Func<PKM, bool>> ExtraFilters { get; } = new();
+    public List<Func<PKM, bool>> ExtraFilters { get; } = [];
 
     /// <summary>
     /// Adds a move to the required move list.
@@ -61,7 +63,7 @@ public sealed class SearchSettings
     /// <returns>Search results that match all criteria</returns>
     public IEnumerable<PKM> Search(IEnumerable<PKM> list)
     {
-        BatchFilters = StringInstruction.GetFilters(BatchInstructions);
+        InitializeFilters();
         var result = SearchInner(list);
 
         if (SearchClones != CloneDetectionMethod.None)
@@ -80,7 +82,7 @@ public sealed class SearchSettings
     /// <returns>Search results that match all criteria</returns>
     public IEnumerable<SlotCache> Search(IEnumerable<SlotCache> list)
     {
-        BatchFilters = StringInstruction.GetFilters(BatchInstructions);
+        InitializeFilters();
         var result = SearchInner(list);
 
         if (SearchClones != CloneDetectionMethod.None)
@@ -91,6 +93,16 @@ public sealed class SearchSettings
         }
 
         return result;
+    }
+
+    private void InitializeFilters()
+    {
+        var filters = StringInstruction.GetFilters(BatchInstructions);
+        var meta = filters.Where(z => Core.BatchFilters.FilterMeta.Any(x => x.IsMatch(z.PropertyName))).ToList();
+        if (meta.Count != 0)
+            filters.RemoveAll(meta.Contains);
+        BatchFilters = filters;
+        BatchFiltersMeta = meta;
     }
 
     private IEnumerable<PKM> SearchInner(IEnumerable<PKM> list)
@@ -108,6 +120,8 @@ public sealed class SearchSettings
         foreach (var entry in list)
         {
             var pk = entry.Entity;
+            if (BatchFiltersMeta.Count != 0 && !BatchEditing.IsFilterMatchMeta(BatchFiltersMeta, entry))
+                continue;
             if (!IsSearchMatch(pk))
                 continue;
             yield return entry;
@@ -152,7 +166,7 @@ public sealed class SearchSettings
     {
         if (Generation > 0 && !SearchUtil.SatisfiesFilterGeneration(pk, Generation))
             return false;
-        if (Moves.Count > 0 && !SearchUtil.SatisfiesFilterMoves(pk, Moves))
+        if (Moves.Count > 0 && !SearchUtil.SatisfiesFilterMoves(pk, CollectionsMarshal.AsSpan(Moves)))
             return false;
         if (HiddenPowerType > -1 && pk.HPType != HiddenPowerType)
             return false;
@@ -195,13 +209,13 @@ public sealed class SearchSettings
     public IReadOnlyList<GameVersion> GetVersions(SaveFile sav, GameVersion fallback)
     {
         if (Version > 0)
-            return new[] {(GameVersion) Version};
+            return [(GameVersion) Version];
 
         return Generation switch
         {
-            1 when !ParseSettings.AllowGen1Tradeback => new[] {RD, BU, GN, YW},
-            2 when sav is SAV2 {Korean: true} => new[] {GD, SI},
-            1 or 2 => new[] {RD, BU, GN, YW, /* */ GD, SI, C},
+            1 when !ParseSettings.AllowGen1Tradeback => [RD, BU, GN, YW],
+            2 when sav is SAV2 {Korean: true} => [GD, SI],
+            1 or 2 => [RD, BU, GN, YW, /* */ GD, SI, C],
 
             _ when fallback.GetGeneration() == Generation => GameUtil.GetVersionsWithinRange(sav, Generation).ToArray(),
             _ => GameUtil.GameVersions,

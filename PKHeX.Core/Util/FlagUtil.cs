@@ -15,7 +15,7 @@ public static class FlagUtil
     /// <param name="bitIndex">Bit to read</param>
     public static bool GetFlag(ReadOnlySpan<byte> arr, int offset, int bitIndex)
     {
-        bitIndex &= 7; // ensure bit access is 0-7
+        bitIndex &= 7; // ensure the bit access is 0-7
         return ((arr[offset] >> bitIndex) & 1) != 0;
     }
 
@@ -28,21 +28,26 @@ public static class FlagUtil
     /// <param name="value">Bit flag value to set</param>
     public static void SetFlag(Span<byte> arr, int offset, int bitIndex, bool value)
     {
-        bitIndex &= 7; // ensure bit access is 0-7
+        bitIndex &= 7; // ensure the bit access is 0-7
         var current = arr[offset] & ~(1 << bitIndex);
         var newValue = current | ((value ? 1 : 0) << bitIndex);
         arr[offset] = (byte)newValue;
     }
 
-    public static bool[] GitBitFlagArray(ReadOnlySpan<byte> data, int count)
+    public static bool[] GetBitFlagArray(ReadOnlySpan<byte> data, int count)
     {
         var result = new bool[count];
-        for (int i = 0; i < count; i++)
-            result[i] = (data[i >> 3] & (1 << (i & 7))) != 0;
+        GetBitFlagArray(data, result);
         return result;
     }
 
-    public static bool[] GitBitFlagArray(ReadOnlySpan<byte> data) => GitBitFlagArray(data, data.Length << 3);
+    public static void GetBitFlagArray(ReadOnlySpan<byte> data, Span<bool> result)
+    {
+        for (int i = 0; i < result.Length; i++)
+            result[i] = (data[i >> 3] & (1 << (i & 7))) != 0;
+    }
+
+    public static bool[] GetBitFlagArray(ReadOnlySpan<byte> data) => GetBitFlagArray(data, data.Length << 3);
 
     public static void SetBitFlagArray(Span<byte> data, ReadOnlySpan<bool> value)
     {

@@ -21,7 +21,7 @@ public static class BattleVersionExtensions
     public static bool IsBattleVersionValid<T>(this T pk, EvolutionHistory h) where T : PKM, IBattleVersion => pk.BattleVersion switch
     {
         0 => true,
-        (int)GameVersion.SW or (int)GameVersion.SH => h.HasVisitedSWSH && !(pk.SWSH || pk.BDSP || pk.LA),
+        (int)GameVersion.SW or (int)GameVersion.SH => h.HasVisitedSWSH && LocationsHOME.GetVersionSWSH(pk.Version) is not ((int)GameVersion.SW or (int)GameVersion.SH),
         _ => false,
     };
 
@@ -38,7 +38,8 @@ public static class BattleVersionExtensions
         pk.SetRelearnMoves(empty);
 
         Span<ushort> moves = stackalloc ushort[4];
-        MoveLevelUp.GetEncounterMoves(moves, pk, pk.CurrentLevel, version);
+        var source = GameData.GetLearnSource(version);
+        source.SetEncounterMoves(pk.Species, pk.Form, pk.CurrentLevel, moves);
         pk.SetMoves(moves);
         pk.FixMoves();
         v.BattleVersion = (byte)version;

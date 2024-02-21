@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using static PKHeX.Core.GameVersion;
 
 namespace PKHeX.Core;
 
-public sealed class EventWorkspace<TSave, TWork> where TSave : IEventFlagArray, IEventWorkArray<TWork> where TWork : unmanaged
+public sealed class EventWorkspace<TSave, TWork> where TSave : class, IEventFlagArray, IEventWorkArray<TWork> where TWork : unmanaged
 {
     private readonly TSave SAV;
     public readonly bool[] Flags;
@@ -44,7 +44,7 @@ public sealed class EventWorkspace<TSave, TWork> where TSave : IEventFlagArray, 
         FR or LG or FRLG => "frlg",
         C => "c",
         GD or SI or GS => "gs",
-        _ => throw new ArgumentOutOfRangeException(nameof(GameVersion)),
+        _ => throw new ArgumentOutOfRangeException(nameof(ver), ver, null),
     };
 
     private static GameVersion GetVersion(TSave ver)

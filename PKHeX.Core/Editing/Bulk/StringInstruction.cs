@@ -16,28 +16,33 @@ namespace PKHeX.Core;
 /// <see cref="FilterNotEqual"/>
 /// <see cref="FilterEqual"/>
 /// <see cref="Apply"/>
-public sealed class StringInstruction
+public sealed class StringInstruction(string PropertyName, string PropertyValue)
 {
     /// <summary> Property to modify. </summary>
-    public string PropertyName { get; }
+    public string PropertyName { get; } = PropertyName;
+
     /// <summary> Value to set to the property. </summary>
-    public string PropertyValue { get; private set; }
+    public string PropertyValue { get; private set; } = PropertyValue;
+
     /// <summary> Filter Comparison Type </summary>
     public InstructionComparer Comparer { get; private init; }
-
-    public StringInstruction(string name, string value)
-    {
-        PropertyName = name;
-        PropertyValue = value;
-    }
 
     public void SetScreenedValue(ReadOnlySpan<string> arr)
     {
         int index = arr.IndexOf(PropertyValue);
-        PropertyValue = (uint)index >= arr.Length ? index.ToString() : PropertyValue;
+        if ((uint)index < arr.Length)
+            PropertyValue = index.ToString();
     }
 
-    public static readonly IReadOnlyList<char> Prefixes = new[] { Apply, FilterEqual, FilterNotEqual, FilterGreaterThan, FilterGreaterThanOrEqual, FilterLessThan, FilterLessThanOrEqual };
+    /// <summary>
+    /// Valid prefixes that are recognized for <see cref="InstructionComparer"/> value comparison types.
+    /// </summary>
+    public static ReadOnlySpan<char> Prefixes =>
+    [
+        Apply,
+        FilterEqual, FilterNotEqual, FilterGreaterThan, FilterGreaterThanOrEqual, FilterLessThan, FilterLessThanOrEqual,
+    ];
+
     private const char Apply = '.';
     private const char SplitRange = ',';
 
@@ -60,7 +65,15 @@ public sealed class StringInstruction
 
     // Extra Functionality
     private int RandomMinimum, RandomMaximum;
+
+    /// <summary>
+    /// Apply a <see cref="RandomValue"/> instead of fixed value, based on the <see cref="RandomMinimum"/> and <see cref="RandomMaximum"/> values.
+    /// </summary>
     public bool Random { get; private set; }
+
+    /// <summary>
+    /// Gets a <see cref="Random"/> value, based on the <see cref="RandomMinimum"/> and <see cref="RandomMaximum"/> values.
+    /// </summary>
     public int RandomValue => Util.Rand.Next(RandomMinimum, RandomMaximum + 1);
 
     /// <summary>
@@ -80,8 +93,7 @@ public sealed class StringInstruction
     public void SetRandomRange(ReadOnlySpan<char> str)
     {
         var index = str.IndexOf(SplitRange);
-        if (index <= 0)
-            throw new ArgumentException($"Invalid Random Range: {str.ToString()}", nameof(str));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(index);
 
         var min = str[..index];
         var max = str[(index + 1)..];
@@ -99,8 +111,14 @@ public sealed class StringInstruction
         }
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/>s from the input <see cref="text"/>.
+    /// </summary>
     public static List<StringInstruction> GetFilters(ReadOnlySpan<char> text) => GetFilters(text.EnumerateLines());
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> filters from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetFilters(ReadOnlySpan<string> lines)
     {
         var result = new List<StringInstruction>(lines.Length);
@@ -112,6 +130,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> filters from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetFilters(SpanLineEnumerator lines)
     {
         var result = new List<StringInstruction>();
@@ -123,6 +144,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> filters from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetFilters(IReadOnlyList<string> lines)
     {
         var result = new List<StringInstruction>(lines.Count);
@@ -134,6 +158,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> filters from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetFilters(IEnumerable<string> lines)
     {
         var result = new List<StringInstruction>();
@@ -145,8 +172,14 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> instructions from the input <see cref="text"/>.
+    /// </summary>
     public static List<StringInstruction> GetInstructions(ReadOnlySpan<char> text) => GetInstructions(text.EnumerateLines());
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> instructions from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetInstructions(ReadOnlySpan<string> lines)
     {
         var result = new List<StringInstruction>(lines.Length);
@@ -158,6 +191,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> instructions from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetInstructions(SpanLineEnumerator lines)
     {
         var result = new List<StringInstruction>();
@@ -169,6 +205,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> instructions from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetInstructions(IReadOnlyList<string> lines)
     {
         var result = new List<StringInstruction>(lines.Count);
@@ -180,6 +219,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Gets a list of <see cref="StringInstruction"/> instructions from the input <see cref="lines"/>.
+    /// </summary>
     public static List<StringInstruction> GetInstructions(IEnumerable<string> lines)
     {
         var result = new List<StringInstruction>();
@@ -191,6 +233,9 @@ public sealed class StringInstruction
         return result;
     }
 
+    /// <summary>
+    /// Tries to parse a <see cref="StringInstruction"/> filter from the input <see cref="line"/>.
+    /// </summary>
     public static bool TryParseFilter(ReadOnlySpan<char> line, [NotNullWhen(true)] out StringInstruction? entry)
     {
         entry = null;
@@ -202,6 +247,9 @@ public sealed class StringInstruction
         return TryParseSplitTuple(line[1..], ref entry, comparer);
     }
 
+    /// <summary>
+    /// Tries to parse a <see cref="StringInstruction"/> instruction from the input <see cref="line"/>.
+    /// </summary>
     public static bool TryParseInstruction(ReadOnlySpan<char> line, [NotNullWhen(true)] out StringInstruction? entry)
     {
         entry = null;
@@ -210,6 +258,9 @@ public sealed class StringInstruction
         return TryParseSplitTuple(line[1..], ref entry);
     }
 
+    /// <summary>
+    /// Tries to split a <see cref="StringInstruction"/> tuple from the input <see cref="tuple"/>.
+    /// </summary>
     public static bool TryParseSplitTuple(ReadOnlySpan<char> tuple, [NotNullWhen(true)] ref StringInstruction? entry, InstructionComparer eval = default)
     {
         if (!TryParseSplitTuple(tuple, out var name, out var value))
@@ -218,6 +269,9 @@ public sealed class StringInstruction
         return true;
     }
 
+    /// <summary>
+    /// Tries to split a <see cref="StringInstruction"/> tuple from the input <see cref="tuple"/>.
+    /// </summary>
     public static bool TryParseSplitTuple(ReadOnlySpan<char> tuple, out ReadOnlySpan<char> name, out ReadOnlySpan<char> value)
     {
         name = default;
@@ -232,13 +286,13 @@ public sealed class StringInstruction
 
         value = tuple[(splitIndex + 1)..];
         var noExtra = value.IndexOf(SplitInstruction);
-        if (noExtra != -1)
-            return false;
-
-        return true;
+        return noExtra == -1;
     }
 
-    public static InstructionComparer GetComparer(char c) => c switch
+    /// <summary>
+    /// Gets the <see cref="InstructionComparer"/> from the input <see cref="opCode"/>.
+    /// </summary>
+    public static InstructionComparer GetComparer(char opCode) => opCode switch
     {
         FilterEqual => IsEqual,
         FilterNotEqual => IsNotEqual,
@@ -264,6 +318,9 @@ public enum InstructionComparer : byte
     IsLessThanOrEqual,
 }
 
+/// <summary>
+/// Extension methods for <see cref="InstructionComparer"/>
+/// </summary>
 public static class InstructionComparerExtensions
 {
     /// <summary>

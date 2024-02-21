@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using static PKHeX.Core.EntityConverterResult;
+using static PKHeX.Core.GameVersion;
 
 namespace PKHeX.Core;
 
@@ -25,15 +26,41 @@ public static class EntityConverter
     public static IEntityRejuvenator RejuvenatorHOME { get; set; } = new LegalityRejuvenator();
 
     /// <summary>
+    /// Responsible for converting a <see cref="PKM"/> to a <see cref="PKH"/> for HOME.
+    /// </summary>
+    public static IHomeStorage HOME { get; set; } = new HomeStorageFacade();
+
+    private static GameVersion _vc1 = RD;
+    private static GameVersion _vc2 = SI;
+
+    /// <summary>
+    /// Default source game for trading from PK2 to PK7.
+    /// </summary>
+    public static GameVersion VirtualConsoleSourceGen1
+    {
+        get => _vc1;
+        set => _vc1 = (value is RD or BU or GN or YW) ? value : RD;
+    }
+
+    /// <summary>
+    /// Default source game for trading from PK2 to PK7.
+    /// </summary>
+    public static GameVersion VirtualConsoleSourceGen2
+    {
+        get => _vc2;
+        set => _vc2 = (value is GD or SI or C) ? value : SI;
+    }
+
+    /// <summary>
     /// Checks if the input <see cref="PKM"/> file is capable of being converted to the desired format.
     /// </summary>
     /// <param name="pk"></param>
     /// <param name="format"></param>
-    /// <returns>True if can be converted to the requested format value.</returns>
+    /// <returns>True if it can be converted to the requested format value.</returns>
     public static bool IsConvertibleToFormat(PKM pk, int format)
     {
-        if (pk.Format >= 3 && pk.Format > format)
-            return false; // pk3->upward can't go backwards
+        if (pk.Format >= 3 && pk.Format > format && format < 8)
+            return false; // pk3->upward can't go backwards until Gen8+
         if (pk.Format <= 2 && format is > 2 and < 7)
             return false; // pk1/2->upward has to be 7 or greater
         return true;
@@ -121,12 +148,6 @@ public static class EntityConverter
         PK4 pk4 when destType == typeof(BK4) => pk4.ConvertToBK4(),
         PK4 pk4 when destType == typeof(RK4) => pk4.ConvertToRK4(),
 
-        PB8 pb8 when destType == typeof(PK8) => pb8.ConvertToPK8(),
-        PK8 pk8 when destType == typeof(PB8) => pk8.ConvertToPB8(),
-        G8PKM pk8 when destType == typeof(PA8) => pk8.ConvertToPA8(),
-        PA8 pa8 when destType == typeof(PK8) => pa8.ConvertToPK8(),
-        PA8 pa8 when destType == typeof(PB8) => pa8.ConvertToPB8(),
-
         // Sequential
         PK1 pk1 => pk1.ConvertToPK2(),
         PK2 pk2 => pk2.ConvertToPK1(),
@@ -134,12 +155,6 @@ public static class EntityConverter
         PK4 pk4 => pk4.ConvertToPK5(),
         PK5 pk5 => pk5.ConvertToPK6(),
         PK6 pk6 => pk6.ConvertToPK7(),
-        PK7 pk7 => pk7.ConvertToPK8(),
-        PB7 pb7 => pb7.ConvertToPK8(),
-
-        PK8 pk8 => pk8.ConvertToPK9(),
-        PB8 pb8 => pb8.ConvertToPK9(),
-        PA8 pa8 => pa8.ConvertToPK9(),
 
         // Side-Formats back to Mainline
         SK2 sk2 => sk2.ConvertToPK2(),
@@ -148,12 +163,23 @@ public static class EntityConverter
         BK4 bk4 => bk4.ConvertToPK4(),
         RK4 rk4 => rk4.ConvertToPK4(),
 
-        _ => InvalidTransfer(out result, NoTransferRoute),
+        _ => GetFinalResult(pk, destType, ref result),
     };
 
-    private static PKM? InvalidTransfer(out EntityConverterResult result, EntityConverterResult value)
+    private static PKM? GetFinalResult(PKM pk, Type destType, ref EntityConverterResult result)
     {
-        result = value;
+        // Every format can eventually feed into HOME. Don't bother checking current type.
+        var type = PKH.GetType(destType);
+        if (type is not HomeGameDataFormat.None)
+        {
+            var pkh = HOME.GetEntity(pk);
+            var converted = pkh.ConvertToPKM(type);
+            if (converted is null)
+                result = IncompatibleSpecies;
+            return converted;
+        }
+
+        result = NoTransferRoute;
         return null;
     }
 
@@ -170,6 +196,7 @@ public static class EntityConverter
         PB7 { Species: (int)Species.Eevee, Form: not 0 } => IncompatibleForm,
         PB8 { Species: (int)Species.Spinda } => IncompatibleSpecies, // Incorrect arrangement of spots (PID endianness)
         PB8 { Species: (int)Species.Nincada } => IncompatibleSpecies, // Clone paranoia with Shedinja
+        PK9 { Species: (int)Species.Koraidon or (int)Species.Miraidon, FormArgument: not 0 } => IncompatibleForm, // Ride
         _ => Success,
     };
 
@@ -204,7 +231,7 @@ public static class EntityConverter
     /// If the PKM is compatible, some properties may be forced to sanitized values.</remarks>
     /// <param name="pk">PKM input that is to be sanity checked.</param>
     /// <param name="limit">Value clamps for the destination format</param>
-    /// <returns>Indication whether or not the PKM is compatible.</returns>
+    /// <returns>Indication whether the PKM is compatible.</returns>
     public static bool IsCompatibleWithModifications(PKM pk, IGameValueLimit limit)
     {
         if (pk.Species > limit.MaxSpeciesID)

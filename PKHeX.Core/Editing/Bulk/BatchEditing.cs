@@ -16,23 +16,24 @@ namespace PKHeX.Core;
 public static class BatchEditing
 {
     public static readonly Type[] Types =
-    {
+    [
         typeof (PK9),
         typeof (PK8), typeof (PA8), typeof (PB8),
         typeof (PB7),
         typeof (PK7), typeof (PK6), typeof (PK5), typeof (PK4), typeof(BK4), typeof(RK4),
         typeof (PK3), typeof (XK3), typeof (CK3),
         typeof (PK2), typeof (SK2), typeof (PK1),
-    };
+    ];
 
     /// <summary>
     /// Extra properties to show in the list of selectable properties (GUI)
     /// </summary>
-    public static readonly List<string> CustomProperties = new()
-    {
+    public static readonly List<string> CustomProperties =
+    [
         PROP_LEGAL, PROP_TYPENAME, PROP_RIBBONS, PROP_CONTESTSTATS, PROP_MOVEMASTERY,
+        PROP_TYPE1, PROP_TYPE2, PROP_TYPEEITHER,
         IdentifierContains, nameof(ISlotInfo.Slot), nameof(SlotInfoBox.Box),
-    };
+    ];
 
     /// <summary>
     /// Property names, indexed by <see cref="Types"/>.
@@ -70,6 +71,9 @@ public static class BatchEditing
 
     internal const string PROP_LEGAL = "Legal";
     internal const string PROP_TYPENAME = "ObjectType";
+    internal const string PROP_TYPEEITHER = "HasType";
+    internal const string PROP_TYPE1 = "PersonalType1";
+    internal const string PROP_TYPE2 = "PersonalType2";
     internal const string PROP_RIBBONS = "Ribbons";
     internal const string PROP_EVS = "EVs";
     internal const string PROP_CONTESTSTATS = "ContestStats";
@@ -83,8 +87,11 @@ public static class BatchEditing
 
         for (int i = 0; i < p.Length; i++)
         {
-            var props = ReflectUtil.GetPropertiesPublic(types[i]);
-            p[i] = props.Concat(extra).OrderBy(a => a).ToArray();
+            var type = types[i];
+            var props = ReflectUtil.GetPropertiesPublic(type);
+            var combine = props.Concat(extra).ToArray();
+            Array.Sort(combine);
+            p[i] = combine;
         }
 
         // Properties for any PKM
@@ -92,14 +99,20 @@ public static class BatchEditing
         var first = p[0];
         var any = new HashSet<string>(first);
         var all = new HashSet<string>(first);
-        for (int i = 1; i < p.Length; i++)
+        foreach (var set in p[1..])
         {
-            any.UnionWith(p[i]);
-            all.IntersectWith(p[i]);
+            any.UnionWith(set);
+            all.IntersectWith(set);
         }
 
-        result[0] = any.OrderBy(z => z).ToArray();
-        result[^1] = all.OrderBy(z => z).ToArray();
+        var arrAny = any.ToArray();
+        Array.Sort(arrAny);
+        result[0] = arrAny;
+
+        var arrAll = all.ToArray();
+        Array.Sort(arrAll);
+        result[^1] = arrAll;
+
         return result;
     }
 
@@ -109,7 +122,7 @@ public static class BatchEditing
     /// <param name="pk">Pokémon to check</param>
     /// <param name="name">Property Name to check</param>
     /// <param name="pi">Property Info retrieved (if any).</param>
-    /// <returns>True if has property, false if does not.</returns>
+    /// <returns>True if it has property, false if it does not.</returns>
     public static bool TryGetHasProperty(PKM pk, string name, [NotNullWhen(true)] out PropertyInfo? pi)
     {
         var type = pk.GetType();
@@ -122,7 +135,7 @@ public static class BatchEditing
     /// <param name="type">Type to check</param>
     /// <param name="name">Property Name to check</param>
     /// <param name="pi">Property Info retrieved (if any).</param>
-    /// <returns>True if has property, false if does not.</returns>
+    /// <returns>True if it has property, false if it does not.</returns>
     public static bool TryGetHasProperty(Type type, string name, [NotNullWhen(true)] out PropertyInfo? pi)
     {
         var index = Array.IndexOf(Types, type);
@@ -154,7 +167,7 @@ public static class BatchEditing
     /// Gets the type of the <see cref="PKM"/> property using the saved cache of properties.
     /// </summary>
     /// <param name="propertyName">Property Name to fetch the type for</param>
-    /// <param name="typeIndex">Type index (within <see cref="Types"/>. Leave empty (0) for a nonspecific format.</param>
+    /// <param name="typeIndex">Type index (within <see cref="Types"/>). Leave empty (0) for a nonspecific format.</param>
     /// <returns>Short name of the property's type.</returns>
     public static string? GetPropertyType(string propertyName, int typeIndex = 0)
     {
@@ -171,7 +184,9 @@ public static class BatchEditing
             return null;
         }
 
-        int index = typeIndex - 1 >= Props.Length ? 0 : typeIndex - 1; // All vs Specific
+        int index = typeIndex - 1;
+        if ((uint)index >= Props.Length)
+            index = 0; // All vs Specific
         var pr = Props[index];
         if (!pr.TryGetValue(propertyName, out var info))
             return null;
@@ -184,14 +199,20 @@ public static class BatchEditing
     /// <param name="il">Instructions to initialize.</param>
     public static void ScreenStrings(IEnumerable<StringInstruction> il)
     {
-        foreach (var i in il.Where(i => !i.PropertyValue.All(char.IsDigit)))
+        foreach (var i in il)
         {
-            string pv = i.PropertyValue;
+            var pv = i.PropertyValue;
+            if (pv.All(char.IsDigit))
+                continue;
+
             if (pv.StartsWith(CONST_SPECIAL) && !pv.StartsWith(CONST_BYTES, StringComparison.Ordinal))
             {
                 var str = pv.AsSpan(1);
                 if (StringInstruction.IsRandomRange(str))
+                {
                     i.SetRandomRange(str);
+                    continue;
+                }
             }
 
             SetInstructionScreenedValue(i);
@@ -218,13 +239,29 @@ public static class BatchEditing
         }
     }
 
+    private static Dictionary<string, PropertyInfo> GetProps(PKM pk)
+    {
+        var type = pk.GetType();
+        var typeIndex = Array.IndexOf(Types, type);
+        return Props[typeIndex];
+    }
+
     /// <summary>
     /// Checks if the object is filtered by the provided <see cref="filters"/>.
     /// </summary>
     /// <param name="filters">Filters which must be satisfied.</param>
     /// <param name="pk">Object to check.</param>
     /// <returns>True if <see cref="pk"/> matches all filters.</returns>
-    public static bool IsFilterMatch(IEnumerable<StringInstruction> filters, PKM pk) => filters.All(z => IsFilterMatch(z, pk, Props[Array.IndexOf(Types, pk.GetType())]));
+    public static bool IsFilterMatch(IEnumerable<StringInstruction> filters, PKM pk)
+    {
+        var props = GetProps(pk);
+        foreach (var filter in filters)
+        {
+            if (!IsFilterMatch(filter, pk, props))
+                return false;
+        }
+        return true;
+    }
 
     /// <summary>
     /// Checks if the object is filtered by the provided <see cref="filters"/>.
@@ -262,7 +299,9 @@ public static class BatchEditing
         {
             if (cmd.PropertyName is PROP_TYPENAME)
             {
-                if (!cmd.Comparer.IsCompareEquivalence(cmd.PropertyValue == obj.GetType().Name))
+                var type = obj.GetType();
+                var typeName = type.Name;
+                if (!cmd.Comparer.IsCompareEquivalence(cmd.PropertyValue == typeName))
                     return false;
                 continue;
             }
@@ -311,12 +350,12 @@ public static class BatchEditing
             return ModifyResult.Invalid;
 
         var info = new BatchInfo(pk);
-        var pi = Props[Array.IndexOf(Types, pk.GetType())];
+        var props = GetProps(pk);
         foreach (var cmd in filters)
         {
             try
             {
-                if (!IsFilterMatch(cmd, info, pi))
+                if (!IsFilterMatch(cmd, info, props))
                     return ModifyResult.Filtered;
             }
             // Swallow any error because this can be malformed user input.
@@ -332,7 +371,7 @@ public static class BatchEditing
         {
             try
             {
-                var tmp = SetPKMProperty(cmd, info, pi);
+                var tmp = SetPKMProperty(cmd, info, props);
                 if (tmp != ModifyResult.Modified)
                     result = tmp;
             }
@@ -340,19 +379,20 @@ public static class BatchEditing
             catch (Exception ex)
             {
                 Debug.WriteLine(MsgBEModifyFail + " " + ex.Message, cmd.PropertyName, cmd.PropertyValue);
+                result = ModifyResult.Error;
             }
         }
         return result;
     }
 
     /// <summary>
-    /// Sets the if the <see cref="BatchInfo"/> should be filtered due to the <see cref="StringInstruction"/> provided.
+    /// Sets the property if the <see cref="BatchInfo"/> should be filtered due to the <see cref="StringInstruction"/> provided.
     /// </summary>
     /// <param name="cmd">Command Filter</param>
     /// <param name="info">Pokémon to check.</param>
     /// <param name="props">PropertyInfo cache (optional)</param>
     /// <returns>True if filtered, else false.</returns>
-    private static ModifyResult SetPKMProperty(StringInstruction cmd, BatchInfo info, IReadOnlyDictionary<string, PropertyInfo> props)
+    private static ModifyResult SetPKMProperty(StringInstruction cmd, BatchInfo info, Dictionary<string, PropertyInfo> props)
     {
         var pk = info.Entity;
         if (cmd.PropertyValue.StartsWith(CONST_BYTES, StringComparison.Ordinal))
@@ -361,7 +401,7 @@ public static class BatchEditing
         if (cmd.PropertyValue.StartsWith(CONST_SUGGEST, StringComparison.OrdinalIgnoreCase))
             return SetSuggestedPKMProperty(cmd.PropertyName, info, cmd.PropertyValue);
         if (cmd is { PropertyValue: CONST_RAND, PropertyName: nameof(PKM.Moves) })
-            return SetMoves(pk, info.Legality.GetMoveSet(true));
+            return SetSuggestedMoveset(info, true);
 
         if (SetComplexProperty(pk, cmd))
             return ModifyResult.Modified;
@@ -427,7 +467,14 @@ public static class BatchEditing
             return false;
         if (!pi.CanRead)
             return false;
-        return cmd.Comparer.IsCompareOperator(pi.CompareTo(pk, cmd.PropertyValue));
+
+        string val = cmd.PropertyValue;
+        if (val.StartsWith(CONST_POINTER) && props.TryGetValue(val[1..], out var opi))
+        {
+            var result = opi.GetValue(pk) ?? throw new NullReferenceException();
+            return cmd.Comparer.IsCompareOperator(pi.CompareTo(pk, result));
+        }
+        return cmd.Comparer.IsCompareOperator(pi.CompareTo(pk, val));
     }
 
     /// <summary>
@@ -453,16 +500,11 @@ public static class BatchEditing
     {
         switch (cmd.PropertyName)
         {
-            case nameof(PKM.Nickname_Trash): ConvertToBytes(cmd.PropertyValue).CopyTo(pk.Nickname_Trash); return ModifyResult.Modified;
-            case nameof(PKM.OT_Trash):       ConvertToBytes(cmd.PropertyValue).CopyTo(pk.OT_Trash);       return ModifyResult.Modified;
-            case nameof(PKM.HT_Trash):       ConvertToBytes(cmd.PropertyValue).CopyTo(pk.HT_Trash);       return ModifyResult.Modified;
+            case nameof(PKM.Nickname_Trash): StringUtil.LoadHexBytesTo(cmd.PropertyValue.AsSpan(CONST_BYTES.Length), pk.Nickname_Trash, 3); return ModifyResult.Modified;
+            case nameof(PKM.OT_Trash):       StringUtil.LoadHexBytesTo(cmd.PropertyValue.AsSpan(CONST_BYTES.Length), pk.OT_Trash, 3);       return ModifyResult.Modified;
+            case nameof(PKM.HT_Trash):       StringUtil.LoadHexBytesTo(cmd.PropertyValue.AsSpan(CONST_BYTES.Length), pk.HT_Trash, 3);       return ModifyResult.Modified;
             default:
                 return ModifyResult.Error;
-        }
-        static byte[] ConvertToBytes(string str)
-        {
-            var arr = str[CONST_BYTES.Length..].Split(',');
-            return Array.ConvertAll(arr, z => Convert.ToByte(z.Trim(), 16));
         }
     }
 
@@ -497,7 +539,16 @@ public static class BatchEditing
     {
         if (cmd.PropertyName == nameof(PKM.IVs))
         {
-            pk.SetRandomIVs();
+            var la = new LegalityAnalysis(pk);
+            var enc = la.EncounterMatch;
+            if (enc is IFlawlessIVCount { FlawlessIVCount: not 0 } fc)
+                pk.SetRandomIVs(fc.FlawlessIVCount);
+            else if (enc is IFixedIVSet { IVs: {IsSpecified: true} iv})
+                pk.SetRandomIVs(iv);
+            else if (enc is IFlawlessIVCountConditional c && c.GetFlawlessIVCount(pk) is { Max: not 0 } x)
+                pk.SetRandomIVs(Util.Rand.Next(x.Min, x.Max + 1));
+            else
+                pk.SetRandomIVs();
             return;
         }
 

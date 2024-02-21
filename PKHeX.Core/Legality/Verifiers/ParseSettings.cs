@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 
 namespace PKHeX.Core;
 
@@ -12,15 +11,15 @@ public static class ParseSettings
     internal static ITrainerInfo ActiveTrainer { get; set; } = new SimpleTrainerInfo(GameVersion.Any) { OT = string.Empty, Language = -1 };
 
     /// <summary>
-    /// Toggles whether or not the word filter should be used when checking the data.
+    /// Toggles whether the word filter should be used when checking the data.
     /// </summary>
     public static bool CheckWordFilter { get; set; } = true;
 
     /// <summary>
-    /// Setting to specify if an analysis should permit data sourced from the physical cartridge era of GameBoy games.
+    /// Setting to specify if an analysis should permit data sourced from the physical cartridge era of Game Boy games.
     /// </summary>
     /// <remarks>If false, indicates to use Virtual Console rules (which are transferable to Gen7+)</remarks>
-    public static bool AllowGBCartEra { get; set; }
+    public static bool AllowGBCartEra { private get; set; }
 
     /// <summary>
     /// Setting to specify if an analysis should permit trading a Generation 1 origin file to Generation 2, then back. Useful for checking RBY Metagame rules.
@@ -41,7 +40,6 @@ public static class ParseSettings
     public static IReadOnlyList<string> MoveStrings { get; private set; } = Util.GetMovesList(GameLanguage.DefaultLanguage);
     public static IReadOnlyList<string> SpeciesStrings { get; private set; } = Util.GetSpeciesList(GameLanguage.DefaultLanguage);
     public static string GetMoveName(ushort move) => move >= MoveStrings.Count ? LegalityCheckStrings.L_AError : MoveStrings[move];
-    public static IEnumerable<string> GetMoveNames(IEnumerable<ushort> moves) => moves.Select(m => m >= MoveStrings.Count ? LegalityCheckStrings.L_AError : MoveStrings[m]);
 
     public static void ChangeLocalizationStrings(IReadOnlyList<string> moves, IReadOnlyList<string> species)
     {
@@ -52,7 +50,7 @@ public static class ParseSettings
     /// <summary>
     /// Checks to see if Crystal is available to visit/originate from.
     /// </summary>
-    /// <remarks>Pokemon Crystal was never released in Korea.</remarks>
+    /// <remarks>Pokémon Crystal was never released in Korea.</remarks>
     /// <param name="Korean">Korean data being checked</param>
     /// <returns>True if Crystal data is allowed</returns>
     public static bool AllowGen2Crystal(bool Korean) => !Korean;
@@ -67,10 +65,16 @@ public static class ParseSettings
     /// <summary>
     /// Checks to see if the Move Reminder (Relearner) is available.
     /// </summary>
-    /// <remarks> Pokemon Stadium 2 was never released in Korea.</remarks>
+    /// <remarks> Pokémon Stadium 2 was never released in Korea.</remarks>
     /// <param name="pk">Data being checked</param>
     /// <returns>True if Crystal data is allowed</returns>
-    public static bool AllowGen2MoveReminder(PKM pk) => !pk.Korean && AllowGBCartEra;
+    public static bool AllowGen2MoveReminder(PKM pk) => !pk.Korean && AllowGBStadium2;
+
+    public static bool AllowGen2OddEgg(PKM pk) => !pk.Japanese || AllowGBCartEra;
+
+    public static bool AllowGBVirtualConsole3DS => !AllowGBCartEra;
+    public static bool AllowGBEraEvents => AllowGBCartEra;
+    public static bool AllowGBStadium2 => AllowGBCartEra;
 
     internal static bool IsFromActiveTrainer(PKM pk) => ActiveTrainer.IsFromTrainer(pk);
 

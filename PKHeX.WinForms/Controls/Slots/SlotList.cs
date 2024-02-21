@@ -10,8 +10,8 @@ public partial class SlotList : UserControl, ISlotViewer<PictureBox>
 {
     private static readonly string[] names = Enum.GetNames(typeof(StorageSlotType));
     private readonly Label[] Labels = new Label[names.Length];
-    private readonly List<PictureBox> slots = new();
-    private List<SlotInfoMisc> SlotOffsets = new();
+    private readonly List<PictureBox> slots = [];
+    private List<SlotInfoMisc> SlotOffsets = [];
     public int SlotCount { get; private set; }
     public SaveFile SAV { get; set; } = null!;
     public bool FlagIllegal { get; set; }
@@ -81,7 +81,6 @@ public partial class SlotList : UserControl, ISlotViewer<PictureBox>
         return slots.IndexOf(view);
     }
 
-    public int GetSlotOffset(int slot) => SlotOffsets[slot].Offset;
     public int ViewIndex { get; set; } = -1;
 
     private void LoadSlots(int count, Action<Control> enableDragDropContext)
@@ -126,7 +125,8 @@ public partial class SlotList : UserControl, ISlotViewer<PictureBox>
             return;
         for (int i = 0; i < diff; i++)
         {
-            var slot = GetPictureBox(i, SpriteUtil.Spriter);
+            var name = $"bpkm{before + i}";
+            var slot = GetPictureBox(SpriteUtil.Spriter, name);
             enableDragDropContext(slot);
             slots.Add(slot);
         }
@@ -134,7 +134,7 @@ public partial class SlotList : UserControl, ISlotViewer<PictureBox>
 
     private const int PadPixels = 2;
 
-    private static PictureBox GetPictureBox(int index, SpriteBuilder s) => new()
+    private static SelectablePictureBox GetPictureBox(SpriteBuilder s, string name) => new()
     {
         BorderStyle = BorderStyle.FixedSingle,
         Width = s.Width + 2,
@@ -143,7 +143,9 @@ public partial class SlotList : UserControl, ISlotViewer<PictureBox>
         Margin = new Padding(PadPixels),
         Padding = Padding.Empty,
         SizeMode = PictureBoxSizeMode.CenterImage,
-        Name = $"bpkm{index}",
+        Name = name,
+        AccessibleName = name,
+        AccessibleRole = AccessibleRole.Graphic,
     };
 
     private void AddLabels()

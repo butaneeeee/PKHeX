@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace PKHeX.Core;
 
@@ -6,28 +6,34 @@ public sealed class ResortSave7 : SaveBlock<SAV7>
 {
     public ResortSave7(SAV7 sav, int offset) : base(sav) => Offset = offset;
 
+    private const int SIZE_7STORED_R = PokeCrypto.SIZE_6STORED + 4;
+
     public const int ResortCount = 93;
-    public int GetResortSlotOffset(int slot) => Offset + 0x16 + (slot * PokeCrypto.SIZE_6STORED);
+    public int GetResortSlotOffset(int slot) => Offset + 0x16 + (slot * SIZE_7STORED_R);
 
     public PK7[] ResortPKM
     {
         get
         {
-            PK7[] data = new PK7[ResortCount];
-            for (int i = 0; i < data.Length; i++)
+            PK7[] result = new PK7[ResortCount];
+            for (int i = 0; i < result.Length; i++)
             {
-                var bytes = SAV.GetData(GetResortSlotOffset(i), PokeCrypto.SIZE_6STORED);
-                data[i] = new PK7(bytes);
+                var ofs = GetResortSlotOffset(i);
+                var data = SAV.Data.AsSpan(ofs, PokeCrypto.SIZE_6STORED).ToArray();
+                result[i] = new PK7(data);
             }
-            return data;
+            return result;
         }
         set
         {
-            if (value.Length != ResortCount)
-                throw new ArgumentException(nameof(ResortCount));
+            ArgumentOutOfRangeException.ThrowIfNotEqual(value.Length, ResortCount);
 
             for (int i = 0; i < value.Length; i++)
-                SAV.SetSlotFormatStored(value[i], Data, GetResortSlotOffset(i));
+            {
+                var ofs = GetResortSlotOffset(i);
+                var dest = Data.AsSpan(ofs, PokeCrypto.SIZE_6STORED);
+                SAV.SetSlotFormatStored(value[i], dest);
+            }
         }
     }
 
@@ -56,7 +62,7 @@ public sealed class ResortSave7 : SaveBlock<SAV7>
         return GetBeanIndexNames(colors);
     }
 
-    private static string[] GetBeanIndexNames(string[] colors)
+    private static string[] GetBeanIndexNames(ReadOnlySpan<string> colors)
     {
         // 7 regular, 7 patterned, one rainbow
         var beans = new string[(colors.Length * 2) + 1];

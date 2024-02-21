@@ -13,8 +13,8 @@ public sealed class LearnSource7SM : ILearnSource<PersonalInfo7>, IEggSource
 {
     public static readonly LearnSource7SM Instance = new();
     private static readonly PersonalTable7 Personal = PersonalTable.SM;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpSM;
-    private static readonly EggMoves7[] EggMoves = Legal.EggMovesSM;
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("lvlmove_sm.pkl"), "sm"u8));
+    private static readonly EggMoves7[] EggMoves = EggMoves7.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_sm.pkl"), "sm"u8));
     private const int MaxSpecies = Legal.MaxSpeciesID_7;
     private const LearnEnvironment Game = SM;
     private const int ReminderBonus = 100; // Move reminder allows re-learning ALL level up moves regardless of level.
@@ -34,15 +34,15 @@ public sealed class LearnSource7SM : ILearnSource<PersonalInfo7>, IEggSource
     {
         if (species > MaxSpecies)
             return false;
-        var moves = MoveEgg.GetFormEggMoves(species, form, EggMoves).AsSpan();
-        return moves.IndexOf(move) != -1;
+        var moves = EggMoves.GetFormEggMoves(species, form);
+        return moves.Contains(move);
     }
 
     public ReadOnlySpan<ushort> GetEggMoves(ushort species, byte form)
     {
         if (species > MaxSpecies)
-            return ReadOnlySpan<ushort>.Empty;
-        return MoveEgg.GetFormEggMoves(species, form, EggMoves);
+            return [];
+        return EggMoves.GetFormEggMoves(species, form);
     }
 
     public MoveLearnInfo GetCanLearn(PKM pk, PersonalInfo7 pi, EvoCriteria evo, ushort move, MoveSourceType types = MoveSourceType.All, LearnOption option = LearnOption.Current)
@@ -55,10 +55,10 @@ public sealed class LearnSource7SM : ILearnSource<PersonalInfo7>, IEggSource
                 return new(LevelUp, Game, 1);
         }
 
-        if (types.HasFlag(MoveSourceType.Machine) && pi.GetIsLearnTM(Array.IndexOf(TMHM_SM, move)))
+        if (types.HasFlag(MoveSourceType.Machine) && pi.GetIsLearnTM(TMHM_SM.IndexOf(move)))
             return new(TMHM, Game);
 
-        if (types.HasFlag(MoveSourceType.TypeTutor) && pi.GetIsLearnTutorType(Array.IndexOf(LearnSource5.TypeTutor567, move)))
+        if (types.HasFlag(MoveSourceType.TypeTutor) && pi.GetIsLearnTutorType(LearnSource5.TypeTutor567.IndexOf(move)))
             return new(Tutor, Game);
 
         if (types.HasFlag(MoveSourceType.EnhancedTutor) && GetIsEnhancedTutor(evo, pk, move, option))
@@ -72,19 +72,19 @@ public sealed class LearnSource7SM : ILearnSource<PersonalInfo7>, IEggSource
         (int)Species.Pikachu or (int)Species.Raichu => move is (int)Move.VoltTackle,
         (int)Species.Necrozma => move switch
         {
-            (int)Move.SunsteelStrike => (option == LearnOption.AtAnyTime || current.Form == 1), // Sun w/ Solgaleo
-            (int)Move.MoongeistBeam  => (option == LearnOption.AtAnyTime || current.Form == 2), // Moon w/ Lunala
+            (int)Move.SunsteelStrike => option.IsPast() || current.Form == 1, // Sun w/ Solgaleo
+            (int)Move.MoongeistBeam  => option.IsPast() || current.Form == 2, // Moon w/ Lunala
             _ => false,
         },
         (int)Species.Keldeo   => move is (int)Move.SecretSword,
         (int)Species.Meloetta => move is (int)Move.RelicSong,
         (int)Species.Rotom => move switch
         {
-            (int)Move.Overheat  => option == LearnOption.AtAnyTime || current.Form == 1,
-            (int)Move.HydroPump => option == LearnOption.AtAnyTime || current.Form == 2,
-            (int)Move.Blizzard  => option == LearnOption.AtAnyTime || current.Form == 3,
-            (int)Move.AirSlash  => option == LearnOption.AtAnyTime || current.Form == 4,
-            (int)Move.LeafStorm => option == LearnOption.AtAnyTime || current.Form == 5,
+            (int)Move.Overheat  => option.IsPast() || current.Form == 1,
+            (int)Move.HydroPump => option.IsPast() || current.Form == 2,
+            (int)Move.Blizzard  => option.IsPast() || current.Form == 3,
+            (int)Move.AirSlash  => option.IsPast() || current.Form == 4,
+            (int)Move.LeafStorm => option.IsPast() || current.Form == 5,
             _ => false,
         },
         (int)Species.Zygarde => move is (int)Move.ExtremeSpeed or (int)Move.DragonDance or (int)Move.ThousandArrows or (int)Move.ThousandWaves or (int)Move.CoreEnforcer,
@@ -99,13 +99,9 @@ public sealed class LearnSource7SM : ILearnSource<PersonalInfo7>, IEggSource
         if (types.HasFlag(MoveSourceType.LevelUp))
         {
             var learn = GetLearnset(evo.Species, evo.Form);
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(ReminderBonus);
-            if (hasMoves)
-            {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                    result[moves[i]] = true;
-            }
+            var span = learn.GetMoveRange(ReminderBonus);
+            foreach (var move in span)
+                result[move] = true;
         }
 
         if (types.HasFlag(MoveSourceType.Machine))

@@ -24,8 +24,12 @@ public static class MoveBreed4
         if (count == -1)
             count = moves.Length;
 
-        var learn = GameData.GetLearnsets(version);
-        var learnset = learn[species];
+        var learnset = version switch
+        {
+            HG or SS => LearnSource4HGSS.Instance.GetLearnset(species, 0),
+            D or P => LearnSource4DP.Instance.GetLearnset(species, 0),
+            _ => LearnSource4Pt.Instance.GetLearnset(species, 0),
+        };
         var table = version switch
         {
             HG or SS => PersonalTable.HGSS,
@@ -33,7 +37,6 @@ public static class MoveBreed4
             _ => PersonalTable.Pt,
         };
         var pi = table[species];
-        var egg = (version is HG or SS ? Legal.EggMovesHGSS : Legal.EggMovesDPPt)[species].Moves;
 
         var actual = MemoryMarshal.Cast<byte, EggSource34>(origins);
         Span<byte> possible = stackalloc byte[count];
@@ -49,7 +52,10 @@ public static class MoveBreed4
         else
         {
             bool inherit = Breeding.GetCanInheritMoves(species);
-            MarkMovesForOrigin(value, egg, count, inherit, pi, version);
+            var eggMoves = version is HG or SS
+                ? LearnSource4HGSS.Instance.GetEggMoves(species, 0)
+                : LearnSource4DP.Instance.GetEggMoves(species, 0);
+            MarkMovesForOrigin(value, eggMoves, count, inherit, pi, version);
             valid = RecurseMovesForOrigin(value, count - 1);
         }
 
@@ -151,8 +157,8 @@ public static class MoveBreed4
         var possible = value.Possible;
         var learn = value.Learnset;
         var baseEgg = value.Learnset.GetBaseEggMoves(value.Level);
-        var tmlist = TM_4.AsSpan(0, 92);
-        var hmlist = (gameVersion is HG or SS ? HM_HGSS : HM_DPPt).AsSpan();
+        var tmlist = TM_4;
+        var hmlist = gameVersion is HG or SS ? HM_HGSS : HM_DPPt;
 
         var moves = value.Moves;
         for (int i = 0; i < count; i++)
@@ -162,7 +168,7 @@ public static class MoveBreed4
             if (baseEgg.IndexOf(move) != -1)
                 possible[i] |= 1 << (int)Base;
 
-            if (inheritLevelUp && learn.GetLevelLearnMove(move) != -1)
+            if (inheritLevelUp && learn.GetIsLearn(move))
                 possible[i] |= 1 << (int)ParentLevelUp;
 
             if (eggMoves.Contains(move))

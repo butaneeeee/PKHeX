@@ -7,14 +7,14 @@ namespace PKHeX.Core;
 /// </summary>
 public static class RibbonVerifierCommon8
 {
-    public static void Parse(this IRibbonSetCommon8 r, RibbonVerifierArguments args, ref RibbonResultList list)
+    public static void Parse(this IRibbonSetCommon8 r, in RibbonVerifierArguments args, ref RibbonResultList list)
     {
         var evos = args.History;
         if (r.RibbonTowerMaster && !RibbonRules.IsRibbonValidTowerMaster(evos))
             list.Add(TowerMaster);
 
         var pk = args.Entity;
-        bool ranked = evos.HasVisitedSWSH || pk.SV;
+        bool ranked = evos.HasVisitedSWSH || evos.HasVisitedGen9;
 
         if (!evos.HasVisitedSWSH)
         {

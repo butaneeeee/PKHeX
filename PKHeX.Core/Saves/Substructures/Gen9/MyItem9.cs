@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace PKHeX.Core;
 
@@ -8,11 +7,9 @@ namespace PKHeX.Core;
 /// Player item pouches storage
 /// </summary>
 /// <remarks>size=0xBB80 (<see cref="ItemSaveSize"/> items)</remarks>
-public sealed class MyItem9 : MyItem
+public sealed class MyItem9(SaveFile SAV, SCBlock block) : MyItem(SAV, block.Data)
 {
     public const int ItemSaveSize = 3000;
-
-    public MyItem9(SaveFile SAV, SCBlock block) : base(SAV, block.Data) { }
 
     public int GetItemQuantity(ushort itemIndex)
     {
@@ -32,34 +29,25 @@ public sealed class MyItem9 : MyItem
         item.Write(span);
     }
 
-    public static InventoryType GetType(ushort itemIndex)
-    {
-        var types = new[]
-        {
-            InventoryType.Items, InventoryType.KeyItems, InventoryType.TMHMs, InventoryType.Medicine,
-            InventoryType.Berries, InventoryType.Balls, InventoryType.BattleItems, InventoryType.Treasure,
-            InventoryType.Ingredients, InventoryType.Candy,
-        };
-        return Array.Find(types, z => GetLegal(z).Contains(itemIndex));
-    }
+    public static InventoryType GetType(ushort itemIndex) => ItemStorage9SV.GetInventoryPouch(itemIndex);
 
     public override IReadOnlyList<InventoryPouch> Inventory { get => ConvertToPouches(); set => LoadFromPouches(value); }
 
     private IReadOnlyList<InventoryPouch> ConvertToPouches()
     {
-        var pouches = new[]
-        {
-            MakePouch(InventoryType.Medicine, IsHeldItemLegal),
-            MakePouch(InventoryType.Balls, IsHeldItemLegal),
-            MakePouch(InventoryType.BattleItems, IsHeldItemLegal),
-            MakePouch(InventoryType.Berries, IsHeldItemLegal),
-            MakePouch(InventoryType.Items, IsHeldItemLegal),
-            MakePouch(InventoryType.TMHMs, IsHeldItemLegal),
-            MakePouch(InventoryType.Treasure, IsHeldItemLegal),
-            MakePouch(InventoryType.Ingredients, IsHeldItemLegal),
+        InventoryPouch9[] pouches =
+        [
+            MakePouch(InventoryType.Medicine),
+            MakePouch(InventoryType.Balls),
+            MakePouch(InventoryType.BattleItems),
+            MakePouch(InventoryType.Berries),
+            MakePouch(InventoryType.Items),
+            MakePouch(InventoryType.TMHMs),
+            MakePouch(InventoryType.Treasure),
+            MakePouch(InventoryType.Ingredients),
             MakePouch(InventoryType.KeyItems),
-            MakePouch(InventoryType.Candy, IsHeldItemLegal),
-        };
+            MakePouch(InventoryType.Candy),
+        ];
         return pouches.LoadAll(Data);
     }
 
@@ -71,21 +59,14 @@ public sealed class MyItem9 : MyItem
 
     private void CleanIllegalSlots()
     {
-        var all = new[]
+        var types = ItemStorage9SV.ValidTypes;
+        var hashSet = new HashSet<ushort>(Legal.MaxItemID_9);
+        foreach (var type in types)
         {
-            GetLegal(InventoryType.Items),
-            GetLegal(InventoryType.KeyItems),
-            GetLegal(InventoryType.TMHMs),
-            GetLegal(InventoryType.Medicine),
-            GetLegal(InventoryType.Berries),
-            GetLegal(InventoryType.Balls),
-            GetLegal(InventoryType.BattleItems),
-            GetLegal(InventoryType.Treasure),
-            GetLegal(InventoryType.Ingredients),
-            GetLegal(InventoryType.Candy),
-        }.SelectMany(z => z).Distinct();
-
-        var hashSet = new HashSet<ushort>(all);
+            var items = ItemStorage9SV.GetLegal(type);
+            foreach (var item in items)
+                hashSet.Add(item);
+        }
         for (ushort i = 0; i < (ushort)SAV.MaxItemID; i++) // even though there are 3000, just overwrite the ones that people will mess up.
         {
             if (!hashSet.Contains(i))
@@ -93,44 +74,12 @@ public sealed class MyItem9 : MyItem
         }
     }
 
-    private static InventoryPouch9 MakePouch(InventoryType type, Func<ushort, bool>? isLegal = null)
+    private static InventoryPouch9 MakePouch(InventoryType type)
     {
-        ushort[] legal = GetLegal(type);
-        var max = GetMax(type);
-        return new InventoryPouch9(type, legal, max, GetPouchIndex(type), isLegal);
+        var info = ItemStorage9SV.Instance;
+        var max = info.GetMax(type);
+        return new InventoryPouch9(type, info, max, GetPouchIndex(type));
     }
-
-    public static bool IsHeldItemLegal(ushort item) => !Legal.HeldItems_SV.Contains(item) || Legal.ReleasedHeldItems_9[item];
-
-    private static int GetMax(InventoryType type) => type switch
-    {
-        InventoryType.Items => 999,
-        InventoryType.KeyItems => 1,
-        InventoryType.TMHMs => 999,
-        InventoryType.Medicine => 999,
-        InventoryType.Berries => 999,
-        InventoryType.Balls => 999,
-        InventoryType.BattleItems => 999,
-        InventoryType.Treasure => 999,
-        InventoryType.Ingredients => 999, // 999
-        InventoryType.Candy => 999, // 999
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
-
-    private static ushort[] GetLegal(InventoryType type) => type switch
-    {
-        InventoryType.Items => Legal.Pouch_Other_SV,
-        InventoryType.KeyItems => Legal.Pouch_Event_SV,
-        InventoryType.TMHMs => Legal.Pouch_TM_SV,
-        InventoryType.Medicine => Legal.Pouch_Medicine_SV,
-        InventoryType.Berries => Legal.Pouch_Berries_SV,
-        InventoryType.Balls => Legal.Pouch_Ball_SV,
-        InventoryType.BattleItems => Legal.Pouch_Battle_SV,
-        InventoryType.Treasure => Legal.Pouch_Treasure_SV,
-        InventoryType.Ingredients => Legal.Pouch_Picnic_SV,
-        InventoryType.Candy => Legal.Pouch_Material_SV,
-        _ => throw new ArgumentOutOfRangeException(nameof(type)),
-    };
 
     private static uint GetPouchIndex(InventoryType type) => type switch
     {

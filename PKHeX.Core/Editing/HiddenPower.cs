@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 
 namespace PKHeX.Core;
 
@@ -34,8 +33,63 @@ public static class HiddenPower
         return SixBitType[hp];
     }
 
-    private static ReadOnlySpan<byte> SixBitType => new byte[]
+    /// <summary>
+    /// Gets the current Hidden Power Type of the input IVs for Generations 3+
+    /// </summary>
+    /// <param name="u32">32-bit value of the IVs</param>
+    /// <returns>Hidden Power Type of the IVs</returns>
+    public static int GetType(uint u32)
     {
+        uint hp = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            hp |= (u32 & 1) << i;
+            u32 >>= 5;
+        }
+        return SixBitType[(int)hp];
+    }
+
+    /// <summary>
+    /// Gets the current Hidden Power Type of the input IVs for Generations 3+
+    /// </summary>
+    /// <param name="u32">32-bit value of the IVs</param>
+    /// <remarks>IVs are stored in reverse order in the 32-bit value</remarks>
+    /// <returns>Hidden Power Type of the IVs</returns>
+    public static int GetTypeBigEndian(uint u32)
+    {
+        uint hp = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            hp |= (u32 & 1) << (5 - i);
+            u32 >>= 5;
+        }
+        return SixBitType[(int)hp];
+    }
+
+    /// <summary>
+    /// Count of unique Hidden Power Types
+    /// </summary>
+    public const int TypeCount = 16;
+
+    /// <summary>
+    /// Gets the Type Name index of the input Hidden Power Type
+    /// </summary>
+    /// <param name="type">Fetched Hidden Power Type</param>
+    /// <param name="index">Type Name index</param>
+    /// <returns>True if the input Hidden Power Type is valid</returns>
+    public static bool TryGetTypeIndex(int type, out byte index)
+    {
+        if ((uint)type >= TypeCount)
+        {
+            index = default;
+            return false;
+        }
+        index = (byte)(type + 1); // Normal type is not a valid Hidden Power type
+        return true;
+    }
+
+    private static ReadOnlySpan<byte> SixBitType =>
+    [
         // (low-bit mash) * 15 / 63
         00, 00, 00, 00, 00, 01, 01, 01,
         01, 02, 02, 02, 02, 03, 03, 03,
@@ -45,7 +99,7 @@ public static class HiddenPower
         09, 09, 10, 10, 10, 10, 10, 11,
         11, 11, 11, 12, 12, 12, 12, 13,
         13, 13, 13, 14, 14, 14, 14, 15,
-    };
+    ];
 
     /// <summary>
     /// Gets the current Hidden Power Type of the input <see cref="IVs"/> for Generations 1 &amp; 2
@@ -59,6 +113,9 @@ public static class HiddenPower
         return ((atk & 3) << 2) | (def & 3);
     }
 
+    /// <inheritdoc cref="GetTypeGB(ReadOnlySpan{int})"/>
+    public static int GetTypeGB(ushort u16) => ((u16 >> 10) & 0b1100) | ((u16 >> 8) & 0b11);
+
     /// <summary>
     /// Modifies the provided <see cref="IVs"/> to have the requested <see cref="hiddenPowerType"/> for Generations 1 &amp; 2
     /// </summary>
@@ -67,9 +124,17 @@ public static class HiddenPower
     /// <returns>True if the Hidden Power of the <see cref="IVs"/> is obtained, with or without modifications</returns>
     public static bool SetTypeGB(int hiddenPowerType, Span<int> IVs)
     {
-        IVs[1] = (IVs[1] & ~3) | (hiddenPowerType >> 2);
-        IVs[2] = (IVs[2] & ~3) | (hiddenPowerType & 3);
+        IVs[1] = (IVs[1] & 0b1100) | (hiddenPowerType >> 2);
+        IVs[2] = (IVs[2] & 0b1100) | (hiddenPowerType & 3);
         return true;
+    }
+
+    /// <inheritdoc cref="SetTypeGB(int, Span{int})"/>
+    public static ushort SetTypeGB(int hiddenPowerType, ushort current)
+    {
+        // Extract bits from ATK and DEF.
+        var u16 = ((hiddenPowerType & 0b1100) << 10) | ((hiddenPowerType & 0b11) << 8);
+        return (ushort)((current & 0b1100_1100_1111_1111) | u16);
     }
 
     /// <summary>
@@ -109,76 +174,56 @@ public static class HiddenPower
         }
 
         // Required HP type doesn't match IVs. Make currently-flawless IVs flawed.
-        Span<int> scratch = stackalloc int[IVs.Length];
-        Span<int> result = stackalloc int[IVs.Length];
-        var success = GetSuggestedHiddenPowerIVs(hpVal, IVs, scratch, result);
-        if (!success)
+        var bits = GetSuggestedHiddenPowerIVs(hpVal, IVs);
+        if (bits == NoResult)
             return false; // can't force hidden power?
 
         // set IVs back to array
-        result.CopyTo(IVs);
+        ForceLowBits(IVs, bits);
         return true;
     }
 
-    // Non-recursive https://en.wikipedia.org/wiki/Heap%27s_algorithm
-    private static bool GetSuggestedHiddenPowerIVs(int hpVal, ReadOnlySpan<int> original, Span<int> ivs, Span<int> best)
+    private const byte NoResult = byte.MaxValue;
+
+    private static byte GetSuggestedHiddenPowerIVs(int hpVal, ReadOnlySpan<int> IVs)
     {
-        const int max = 31;
+        // Iterate through all bit combinations that yield our Hidden Power Type.
+        // There's at most 5 we need to check, so brute force is fine.
+        // Prefer the least amount of IVs changed (31 -> 30).
 
-        // Get a list of indexes that can be mutated
-        Span<int> indexes = stackalloc int[original.Length];
-        int flaw = 0;
-        for (int i = 0; i < original.Length; i++)
-        {
-            if (original[i] == max)
-                indexes[flaw++] = i;
-        }
-        indexes = indexes[..flaw];
-        Span<int> c = stackalloc int[indexes.Length];
+        // Get the starting index from our 64 possible bit states.
+        int index = SixBitType.IndexOf((byte)hpVal);
+        if (index == -1)
+            return NoResult;
 
-        int mutated = c.Length + 1; // result tracking
-        for (int i = 1; i < c.Length;)
+        var bestIndex = NoResult;
+        var bestIndexFlaws = 6;
+        do
         {
-            ref int ci = ref c[i];
-            if (i <= ci) // Reset the state and simulate popping the stack by incrementing the pointer.
-            {
-                ci = 0;
-                ++i;
+            var flaws = GetFlawedBitCount(IVs, index);
+            if (flaws >= bestIndexFlaws)
                 continue;
-            }
-
-            var x = (i & 1) * ci; // if lowest bit set, ci : 0 (branch-less)
-            Swap(ref indexes[i], ref indexes[x]);
-
-            // Inlined continuance check
-            original.CopyTo(ivs);
-            var q = Math.Min(indexes.Length, mutated);
-            for (var j = 0; j < q; j++)
-            {
-                ivs[indexes[j]] ^= 1;
-                if (hpVal != GetType(ivs))
-                    continue;
-
-                var ct = j + 1;
-                if (ct >= mutated)
-                    break; // any further flaws are always worse
-
-                mutated = ct;
-                ivs.CopyTo(best);
-                if (j == 0) // nothing will be better than only 1 flaw
-                    return true;
-                break; // any further flaws are always worse
-            }
-
-            ci++;
-            i = 1;
-        }
-
-        return mutated <= c.Length; // did we actually find a suitable result?
+            bestIndex = (byte)index;
+            bestIndexFlaws = flaws;
+        } while (++index < SixBitType.Length && SixBitType[index] == hpVal);
+        return bestIndex;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Swap<T>(ref T a, ref T b) => (a, b) = (b, a);
+    private static int GetFlawedBitCount(ReadOnlySpan<int> ivs, int bitValue)
+    {
+        const int max = 31;
+        int flaws = 0;
+        for (int i = 0; i < ivs.Length; i++)
+        {
+            var iv = ivs[i];
+            if ((iv & 1) == (bitValue & (1 << i)))
+                continue; // ok
+            if (iv != max)
+                return NoResult;
+            flaws++;
+        }
+        return flaws;
+    }
 
     /// <summary>Calculate the Hidden Power Type of the entered IVs.</summary>
     /// <param name="type">Hidden Power Type</param>
@@ -188,15 +233,54 @@ public static class HiddenPower
     {
         if (context.Generation() <= 2)
         {
-            ivs[1] = (ivs[1] & ~3) | (type >> 2);
-            ivs[2] = (ivs[2] & ~3) | (type & 3);
+            ivs[1] = (ivs[1] & 0b1100) | (type >> 2);
+            ivs[2] = (ivs[2] & 0b1100) | (type & 3);
         }
         else
         {
-            var bits = DefaultLowBits[type];
-            for (int i = 0; i < 6; i++)
-                ivs[i] = (ivs[i] & 0x1E) + ((bits >> i) & 1);
+            ForceLowBits(ivs, DefaultLowBits[type]);
         }
+    }
+
+    private static void ForceLowBits(Span<int> ivs, byte bits)
+    {
+        for (int i = 0; i < ivs.Length; i++)
+            ivs[i] = (ivs[i] & 0b11110) | ((bits >> i) & 1);
+    }
+
+    /// <inheritdoc cref="SetIVs(int,Span{int},EntityContext)"/>
+    public static uint SetIVs(int type, uint ivs)
+    {
+        var bits = DefaultLowBits[type];
+        for (int i = 0; i < 6; i++)
+        {
+            var bit = (bits >> i) & 1;
+            var bitIndex = i * 5;
+            var mask = (1u << bitIndex);
+            if (bit == 0)
+                ivs &= ~mask;
+            else
+                ivs |= mask;
+        }
+        return ivs;
+    }
+
+    /// <inheritdoc cref="SetIVs(int,uint)"/>
+    /// <remarks>IVs are stored in reverse order in the 32-bit value</remarks>
+    public static uint SetIVsBigEndian(int type, uint ivs)
+    {
+        var bits = DefaultLowBits[type];
+        for (int i = 0; i < 6; i++)
+        {
+            var bit = (bits >> i) & 1;
+            var bitIndex = (5 - i) * 5;
+            var mask = (1u << bitIndex);
+            if (bit == 0)
+                ivs &= ~mask;
+            else
+                ivs |= mask;
+        }
+        return ivs;
     }
 
     /// <summary>
@@ -207,8 +291,8 @@ public static class HiddenPower
     /// These are just precomputed for fast modification.
     /// Individual Values (H/A/B/S/C/D)
     /// </remarks>
-    public static ReadOnlySpan<byte> DefaultLowBits => new byte[]
-    {
+    public static ReadOnlySpan<byte> DefaultLowBits =>
+    [
         0b000011, // Fighting
         0b001000, // Flying
         0b001011, // Poison
@@ -225,5 +309,5 @@ public static class HiddenPower
         0b111001, // Ice
         0b111101, // Dragon
         0b111111, // Dark
-    };
+    ];
 }

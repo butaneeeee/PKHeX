@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using PKHeX.Core;
 using PKHeX.Drawing.Misc;
+using PKHeX.WinForms.Controls;
 
 namespace PKHeX.WinForms;
 
@@ -19,6 +20,9 @@ public partial class RibbonEditor : Form
     private const string PrefixPB = "PB_";
 
     private const int AffixedNone = -1;
+
+    private bool EnableBackgroundChange;
+    private Control? LastToggledOn;
 
     public RibbonEditor(PKM pk)
     {
@@ -37,6 +41,7 @@ public partial class RibbonEditor : Form
         TLP_Ribbons.ResumeLayout();
 
         InitializeAffixed(pk);
+        EnableBackgroundChange = true;
     }
 
     private void InitializeAffixed(PKM pk)
@@ -112,7 +117,7 @@ public partial class RibbonEditor : Form
             style.SizeType = SizeType.AutoSize;
     }
 
-    private static int GetSortOrder(string name, IReadOnlyDictionary<string, RibbonResult> dict, List<RibbonInfo> otherList)
+    private static int GetSortOrder(string name, Dictionary<string, RibbonResult> dict, List<RibbonInfo> otherList)
     {
         if (name.StartsWith("RibbonMark"))
             return 99;
@@ -137,12 +142,24 @@ public partial class RibbonEditor : Form
     private void AddRibbonSprite(RibbonInfo rib)
     {
         var name = rib.Name;
-        var pb = new PictureBox { AutoSize = false, Size = new Size(40,40), BackgroundImageLayout = ImageLayout.Center, Visible = false, Name = PrefixPB + name };
+        var pb = new SelectablePictureBox
+        {
+            AutoSize = false,
+            Size = new Size(40, 40),
+            BackgroundImageLayout = ImageLayout.Center,
+            Visible = false,
+            Name = PrefixPB + name,
+            AccessibleName = name,
+            AccessibleDescription = name,
+            AccessibleRole = AccessibleRole.Graphic,
+        };
         var img = RibbonSpriteUtil.GetRibbonSprite(name);
         pb.BackgroundImage = img;
 
         var display = RibbonStrings.GetName(name);
         pb.MouseEnter += (s, e) => tipName.SetToolTip(pb, display);
+        if (Entity is IRibbonSetAffixed)
+            pb.Click += (_, _) => CB_Affixed.Text = RibbonStrings.GetName(name);
         FLP_Ribbons.Controls.Add(pb);
     }
 
@@ -187,11 +204,11 @@ public partial class RibbonEditor : Form
         nud.ValueChanged += (sender, e) =>
         {
             var controlName = PrefixPB + rib.Name;
-            var pb = FLP_Ribbons.Controls[controlName];
-            if (pb is null)
-                throw new ArgumentException($"{controlName} not found in {FLP_Ribbons.Name}.");
+            var pb = FLP_Ribbons.Controls[controlName] ?? throw new ArgumentException($"{controlName} not found in {FLP_Ribbons.Name}.");
             pb.Visible = (rib.RibbonCount = (byte)nud.Value) != 0;
             pb.BackgroundImage = RibbonSpriteUtil.GetRibbonSprite(rib.Name, (int)nud.Maximum, (int)nud.Value);
+
+            ToggleNewRibbon(rib, pb);
         };
 
         // Setting value will trigger above event
@@ -216,9 +233,10 @@ public partial class RibbonEditor : Form
             rib.HasRibbon = chk.Checked;
             var controlName = PrefixPB + rib.Name;
             var control = FLP_Ribbons.Controls[controlName];
-            if (control is null)
-                throw new ArgumentException($"{controlName} not found in {FLP_Ribbons.Name}.");
+            ArgumentNullException.ThrowIfNull(control);
             control.Visible = rib.HasRibbon;
+
+            ToggleNewRibbon(rib, control);
         };
 
         // Setting value will trigger above event
@@ -226,6 +244,16 @@ public partial class RibbonEditor : Form
         TLP_Ribbons.Controls.Add(chk, 0, row);
 
         label.Click += (s, e) => chk.Checked ^= true;
+    }
+
+    private void ToggleNewRibbon(RibbonInfo rib, Control pb)
+    {
+        if (!EnableBackgroundChange)
+            return;
+        if (LastToggledOn is not null)
+            LastToggledOn.BackColor = Color.Transparent;
+        pb.BackColor = rib.HasRibbon ? Color.LightBlue : Color.Transparent;
+        LastToggledOn = pb;
     }
 
     private void Save()
@@ -247,10 +275,15 @@ public partial class RibbonEditor : Form
             return;
         }
 
-        foreach (var c in TLP_Ribbons.Controls.OfType<CheckBox>())
-            c.Checked = true;
-        foreach (var n in TLP_Ribbons.Controls.OfType<NumericUpDown>())
-            n.Value = n.Maximum;
+        EnableBackgroundChange = false;
+        foreach (var c in TLP_Ribbons.Controls)
+        {
+            if (c is CheckBox chk)
+                chk.Checked = true;
+            else if (c is NumericUpDown nud)
+                nud.Value = nud.Maximum;
+        }
+        EnableBackgroundChange = true;
     }
 
     private void B_None_Click(object sender, EventArgs e)
@@ -265,9 +298,12 @@ public partial class RibbonEditor : Form
         }
 
         CB_Affixed.SelectedValue = AffixedNone;
-        foreach (var c in TLP_Ribbons.Controls.OfType<CheckBox>())
-            c.Checked = false;
-        foreach (var n in TLP_Ribbons.Controls.OfType<NumericUpDown>())
-            n.Value = 0;
+        foreach (var c in TLP_Ribbons.Controls)
+        {
+            if (c is CheckBox chk)
+                chk.Checked = false;
+            else if (c is NumericUpDown nud)
+                nud.Value = 0;
+        }
     }
 }

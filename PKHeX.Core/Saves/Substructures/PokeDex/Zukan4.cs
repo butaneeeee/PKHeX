@@ -6,10 +6,10 @@ namespace PKHeX.Core;
 /// <summary>
 /// Pokédex structure used by <see cref="SAV4"/> games.
 /// </summary>
-public sealed class Zukan4 : ZukanBase<SAV4>
+public sealed class Zukan4(SAV4 sav, int offset) : ZukanBase<SAV4>(sav, offset)
 {
-    private readonly byte[] Data;
-    private readonly int Offset;
+    private readonly Memory<byte> Buffer = sav.GeneralBuffer[offset..];
+    private Span<byte> Data => Buffer.Span;
 
     // General structure: u32 magic, 4*bitflags, u32 spinda, form flags, language flags, more form flags, upgrade flags
 
@@ -39,13 +39,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
     private bool HGSS => SAV is SAV4HGSS;
     private bool DP => SAV is SAV4DP;
 
-    public Zukan4(SAV4 sav, int offset) : base(sav, offset)
-    {
-        Data = sav.General;
-        Offset = offset;
-    }
-
-    public uint Magic { get => ReadUInt32LittleEndian(Data.AsSpan(Offset)); set => WriteUInt32LittleEndian(Data.AsSpan(Offset), value); }
+    public uint Magic { get => ReadUInt32LittleEndian(Data); set => WriteUInt32LittleEndian(Data, value); }
 
     public override bool GetCaught(ushort species) => GetRegionFlag(0, species - 1);
     public override bool GetSeen(ushort species) => GetRegionFlag(1, species - 1);
@@ -55,7 +49,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     private bool GetRegionFlag(int region, int index)
     {
-        var ofs = Offset + 4 + (region * SIZE_REGION) + (index >> 3);
+        var ofs = 4 + (region * SIZE_REGION) + (index >> 3);
         return FlagUtil.GetFlag(Data, ofs, index);
     }
 
@@ -66,17 +60,17 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     private void SetRegionFlag(int region, int index, bool value)
     {
-        var ofs = Offset + 4 + (region * SIZE_REGION) + (index >> 3);
+        var ofs = 4 + (region * SIZE_REGION) + (index >> 3);
         FlagUtil.SetFlag(Data, ofs, index, value);
     }
 
-    public uint SpindaPID { get => ReadUInt32LittleEndian(Data.AsSpan(Offset + OFS_SPINDA)); set => WriteUInt32LittleEndian(Data.AsSpan(Offset), value); }
+    public uint SpindaPID { get => ReadUInt32LittleEndian(Data[OFS_SPINDA..]); set => WriteUInt32LittleEndian(Data[OFS_SPINDA..], value); }
 
     public static string[] GetFormNames4Dex(ushort species)
     {
-        string[] formNames = FormConverter.GetFormList(species, GameInfo.Strings.types, GameInfo.Strings.forms, Array.Empty<string>(), EntityContext.Gen4);
+        string[] formNames = FormConverter.GetFormList(species, GameInfo.Strings.types, GameInfo.Strings.forms, [], EntityContext.Gen4);
         if (species == (int)Species.Pichu)
-            formNames = new[] { MALE, FEMALE, formNames[1] }; // Spiky
+            formNames = [MALE, FEMALE, formNames[1]]; // Spiky
         return formNames;
     }
 
@@ -87,11 +81,13 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         const int brSize = 0x40;
         if (species == (int)Species.Deoxys)
         {
-            uint val = (uint)(Data[Offset + 0x4 + (1 * brSize) - 1] | (Data[Offset + 0x4 + (2 * brSize) - 1] << 8));
+            var br1 = Data[0x4 + (1 * brSize) - 1];
+            var br2 = Data[0x4 + (2 * brSize) - 1];
+            uint val = (uint)(br1 | (br2 << 8));
             return GetDexFormValues(val, 4, 4);
         }
 
-        int FormOffset1 = Offset + 4 + (4 * brSize) + 4;
+        const int FormOffset1 = 4 + (4 * brSize) + 4;
         switch (species)
         {
             case (int)Species.Shellos: // Shellos
@@ -103,20 +99,20 @@ public sealed class Zukan4 : ZukanBase<SAV4>
             case (int)Species.Wormadam: // Wormadam
                 return GetDexFormValues(Data[FormOffset1 + 3], 2, 3);
             case (int)Species.Unown: // Unown
-                return Data.AsSpan(FormOffset1 + 4, 0x1C).ToArray();
+                return Data.Slice(FormOffset1 + 4, 0x1C).ToArray();
         }
         if (DP)
-            return Array.Empty<byte>();
+            return [];
 
         int PokeDexLanguageFlags = FormOffset1 + (HGSS ? 0x3C : 0x20);
         int FormOffset2 = PokeDexLanguageFlags + 0x1F4;
         return species switch
         {
-            (int)Species.Rotom => GetDexFormValues(ReadUInt32LittleEndian(Data.AsSpan(FormOffset2)), 3, 6),
+            (int)Species.Rotom => GetDexFormValues(ReadUInt32LittleEndian(Data[FormOffset2..]), 3, 6),
             (int)Species.Shaymin => GetDexFormValues(Data[FormOffset2 + 4], 1, 2),
             (int)Species.Giratina => GetDexFormValues(Data[FormOffset2 + 5], 1, 2),
             (int)Species.Pichu when HGSS => GetDexFormValues(Data[FormOffset2 + 6], 2, 3),
-            _ => Array.Empty<byte>(),
+            _ => [],
         };
     }
 
@@ -127,12 +123,12 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         {
             case (int)Species.Deoxys: // Deoxys
                 uint newval = SetDexFormValues(forms, 4, 4);
-                Data[Offset + 0x4 + (1 * brSize) - 1] = (byte)(newval & 0xFF);
-                Data[Offset + 0x4 + (2 * brSize) - 1] = (byte)((newval >> 8) & 0xFF);
+                Data[0x4 + (1 * brSize) - 1] = (byte)(newval & 0xFF);
+                Data[0x4 + (2 * brSize) - 1] = (byte)((newval >> 8) & 0xFF);
                 break;
         }
 
-        int FormOffset1 = Offset + OFS_FORM1;
+        const int FormOffset1 = OFS_FORM1;
         switch (species)
         {
             case (int)Species.Shellos: // Shellos
@@ -148,7 +144,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
                 Data[FormOffset1 + 3] = (byte)SetDexFormValues(forms, 2, 3);
                 return;
             case (int)Species.Unown: // Unown
-                var unown = Data.AsSpan(FormOffset1 + 4, 0x1C);
+                var unown = Data.Slice(FormOffset1 + 4, 0x1C);
                 forms.CopyTo(unown);
                 if (forms.Length != unown.Length)
                     unown[forms.Length..].Fill(FORM_NONE);
@@ -164,7 +160,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         {
             case (int)Species.Rotom: // Rotom
                 var value = SetDexFormValues(forms, 3, 6);
-                WriteUInt32LittleEndian(Data.AsSpan(FormOffset2), value);
+                WriteUInt32LittleEndian(Data[FormOffset2..], value);
                 return;
             case (int)Species.Shaymin: // Shaymin
                 Data[FormOffset2 + 4] = (byte)SetDexFormValues(forms, 1, 2);
@@ -233,7 +229,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     public int GetUnownFormIndex(byte form)
     {
-        var ofs = Offset + OFS_FORM1 + 4;
+        const int ofs = OFS_FORM1 + 4;
         for (byte i = 0; i < 0x1C; i++)
         {
             byte val = Data[ofs + i];
@@ -247,7 +243,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     public int GetUnownFormIndexNext(byte form)
     {
-        var ofs = Offset + OFS_FORM1 + 4;
+        const int ofs = OFS_FORM1 + 4;
         for (int i = 0; i < 0x1C; i++)
         {
             byte val = Data[ofs + i];
@@ -262,7 +258,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     public void ClearUnownForms()
     {
-        var ofs = Offset + OFS_FORM1 + 4;
+        const int ofs = OFS_FORM1 + 4;
         for (int i = 0; i < 0x1C; i++)
             Data[ofs + i] = FORM_NONE;
     }
@@ -275,7 +271,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         if (index == UnownEmpty)
             return;
 
-        var ofs = Offset + OFS_FORM1 + 4;
+        const int ofs = OFS_FORM1 + 4;
         Data[ofs + index] = form;
     }
 
@@ -355,24 +351,22 @@ public sealed class Zukan4 : ZukanBase<SAV4>
 
     public bool GetLanguageBitIndex(ushort species, int lang)
     {
-        int dpl = 1 + Array.IndexOf(DPLangSpecies, species);
-        if (DP && dpl < 0)
+        int dpl = 1 + DPLangSpecies.IndexOf(species);
+        if (DP && dpl <= 0)
             return false;
-        int FormOffset1 = Offset + OFS_FORM1;
-        int PokeDexLanguageFlags = FormOffset1 + (HGSS ? 0x3C : 0x20);
 
+        int PokeDexLanguageFlags = OFS_FORM1 + (HGSS ? 0x3C : 0x20);
         var ofs = PokeDexLanguageFlags + (DP ? dpl : species);
         return FlagUtil.GetFlag(Data, ofs, lang & 7);
     }
 
     public void SetLanguageBitIndex(ushort species, int lang, bool value)
     {
-        int dpl = 1 + Array.IndexOf(DPLangSpecies, species);
+        int dpl = 1 + DPLangSpecies.IndexOf(species);
         if (DP && dpl <= 0)
             return;
-        int FormOffset1 = Offset + OFS_FORM1;
-        int PokeDexLanguageFlags = FormOffset1 + (HGSS ? 0x3C : 0x20);
 
+        int PokeDexLanguageFlags = OFS_FORM1 + (HGSS ? 0x3C : 0x20);
         var ofs = PokeDexLanguageFlags + (DP ? dpl : species);
         FlagUtil.SetFlag(Data, ofs, lang & 7, value);
     }
@@ -382,11 +376,11 @@ public sealed class Zukan4 : ZukanBase<SAV4>
     private int GetSpeciesLanguageByteIndex(ushort species)
     {
         if (DP)
-            return Array.IndexOf(DPLangSpecies, species);
+            return DPLangSpecies.IndexOf(species);
         return species;
     }
 
-    private static readonly int[] DPLangSpecies = { 23, 25, 54, 77, 120, 129, 202, 214, 215, 216, 228, 278, 287, 315 };
+    private static ReadOnlySpan<ushort> DPLangSpecies => [023, 025, 054, 077, 120, 129, 202, 214, 215, 216, 228, 278, 287, 315];
 
     public static int GetGen4LanguageBitIndex(int lang) => --lang switch
     {
@@ -477,7 +471,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         }
         else
         {
-            SetSeenGender(species, pi.FixedGender() & 1);
+            SetSeenGenderNewFlag(species, pi.FixedGender() & 1);
         }
     }
 
@@ -487,7 +481,7 @@ public sealed class Zukan4 : ZukanBase<SAV4>
         SetSeen(species, false);
         SetSeenGenderNeither(species);
 
-        SetForms(species, ReadOnlySpan<byte>.Empty);
+        SetForms(species, []);
         ClearLanguages(species);
     }
 

@@ -6,12 +6,9 @@ namespace PKHeX.Core;
 /// <summary>
 /// <see cref="PersonalInfo"/> class with values from Generation 3 games.
 /// </summary>
-public sealed class PersonalInfo3 : PersonalInfo, IPersonalAbility12
+public sealed class PersonalInfo3(byte[] Data) : PersonalInfo, IPersonalAbility12
 {
     public const int SIZE = 0x1C;
-    private readonly byte[] Data;
-
-    public PersonalInfo3(byte[] data) => Data = data;
 
     public override byte[] Write() => Data;
 
@@ -23,7 +20,7 @@ public sealed class PersonalInfo3 : PersonalInfo, IPersonalAbility12
     public override int SPD { get => Data[0x05]; set => Data[0x05] = (byte)value; }
     public override byte Type1 { get => Data[0x06]; set => Data[0x06] = value; }
     public override byte Type2 { get => Data[0x07]; set => Data[0x07] = value; }
-    public override int CatchRate { get => Data[0x08]; set => Data[0x08] = (byte)value; }
+    public override byte CatchRate { get => Data[0x08]; set => Data[0x08] = value; }
     public override int BaseEXP { get => Data[0x09]; set => Data[0x09] = (byte)value; }
     private int EVYield { get => ReadUInt16LittleEndian(Data.AsSpan(0x0A)); set => WriteUInt16LittleEndian(Data.AsSpan(0x0A), (ushort)value); }
     public override int EV_HP { get => (EVYield >> 0) & 0x3; set => EVYield = (EVYield & ~(0x3 << 0)) | ((value & 0x3) << 0); }
@@ -58,19 +55,19 @@ public sealed class PersonalInfo3 : PersonalInfo, IPersonalAbility12
 
     public bool HasSecondAbility => Ability1 != Ability2;
 
-    public void AddTMHM(ReadOnlySpan<byte> data) => TMHM = FlagUtil.GitBitFlagArray(data);
+    public void AddTMHM(ReadOnlySpan<byte> data) => TMHM = FlagUtil.GetBitFlagArray(data);
 
-    public void AddTypeTutors(ReadOnlySpan<byte> data) => TypeTutors = FlagUtil.GitBitFlagArray(data);
+    public void AddTypeTutors(ReadOnlySpan<byte> data) => TypeTutors = FlagUtil.GetBitFlagArray(data);
 
     /// <summary>
     /// TM/HM learn compatibility flags for individual moves.
     /// </summary>
-    public bool[] TMHM { get; private set; } = Array.Empty<bool>();
+    public bool[] TMHM { get; private set; } = [];
 
     /// <summary>
     /// Grass-Fire-Water-Etc typed learn compatibility flags for individual moves.
     /// </summary>
-    public bool[] TypeTutors { get; private set; } = Array.Empty<bool>();
+    public bool[] TypeTutors { get; private set; } = [];
 
     public void CopyFrom(PersonalInfo3 other)
     {

@@ -59,7 +59,7 @@ public static class MoveBreed
         // Group and order moves by their possible origin flags.
         Span<MoveOrder> expected = stackalloc MoveOrder[moves.Length];
         GetSortedMoveOrder(generation, moves, origins, expected);
-        // Don't mutate the expected list any more.
+        // Don't mutate the expected list anymore.
 
         // Temp buffer for the validation origin flags, unused in current scope but used inside the called method.
         Span<byte> temp = stackalloc byte[moves.Length];
@@ -73,10 +73,8 @@ public static class MoveBreed
 
         // Well, that didn't work; probably because one or more moves aren't valid.
         // Let's remove all present base moves, and get a fresh set of base moves.
-        var learn = GameData.GetLearnsets(version);
-        var table = GameData.GetPersonal(version);
-        var index = table.GetFormIndex(species, form);
-        var learnset = learn[index];
+        var learn = GameData.GetLearnSource(version);
+        var learnset = learn.GetLearnset(species, form);
         var eggLevel = EggStateLegality.GetEggLevel(generation);
         var baseMoves = learnset.GetBaseEggMoves(eggLevel);
 

@@ -12,8 +12,8 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
 {
     public static readonly LearnSource6AO Instance = new();
     private static readonly PersonalTable6AO Personal = PersonalTable.AO;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpAO;
-    private static readonly EggMoves6[] EggMoves = Legal.EggMovesAO;
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("lvlmove_ao.pkl"), "ao"u8));
+    private static readonly EggMoves6[] EggMoves = EggMoves6.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_ao.pkl"), "ao"u8));
     private const int MaxSpecies = Legal.MaxSpeciesID_6;
     private const LearnEnvironment Game = ORAS;
 
@@ -39,7 +39,7 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
     public ReadOnlySpan<ushort> GetEggMoves(ushort species, byte form)
     {
         if (species > MaxSpecies)
-            return ReadOnlySpan<ushort>.Empty;
+            return [];
         return EggMoves[species].Moves;
     }
 
@@ -56,7 +56,7 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
         if (types.HasFlag(MoveSourceType.Machine) && GetIsTM(pi, move))
             return new(TMHM, Game);
 
-        if (types.HasFlag(MoveSourceType.TypeTutor) && pi.GetIsLearnTutorType(Array.IndexOf(LearnSource5.TypeTutor567, move)))
+        if (types.HasFlag(MoveSourceType.TypeTutor) && pi.GetIsLearnTutorType(LearnSource5.TypeTutor567.IndexOf(move)))
             return new(Tutor, Game);
 
         if (types.HasFlag(MoveSourceType.SpecialTutor) && pi.GetIsTutorSpecial(move))
@@ -74,11 +74,11 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
         (int)Species.Meloetta => move is (int)Move.RelicSong,
         (int)Species.Rotom => move switch
         {
-            (int)Move.Overheat  => option == LearnOption.AtAnyTime || current.Form == 1,
-            (int)Move.HydroPump => option == LearnOption.AtAnyTime || current.Form == 2,
-            (int)Move.Blizzard  => option == LearnOption.AtAnyTime || current.Form == 3,
-            (int)Move.AirSlash  => option == LearnOption.AtAnyTime || current.Form == 4,
-            (int)Move.LeafStorm => option == LearnOption.AtAnyTime || current.Form == 5,
+            (int)Move.Overheat  => option.IsPast() || current.Form == 1,
+            (int)Move.HydroPump => option.IsPast() || current.Form == 2,
+            (int)Move.Blizzard  => option.IsPast() || current.Form == 3,
+            (int)Move.AirSlash  => option.IsPast() || current.Form == 4,
+            (int)Move.LeafStorm => option.IsPast() || current.Form == 5,
             _ => false,
         },
         _ => false,
@@ -86,7 +86,7 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
 
     private static bool GetIsTM(PersonalInfo6AO info, ushort move)
     {
-        var index = Array.IndexOf(TMHM_AO, move);
+        var index = TMHM_AO.IndexOf(move);
         return info.GetIsLearnTM(index);
     }
 
@@ -98,13 +98,9 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
         if (types.HasFlag(MoveSourceType.LevelUp))
         {
             var learn = GetLearnset(evo.Species, evo.Form);
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(evo.LevelMax);
-            if (hasMoves)
-            {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                    result[moves[i]] = true;
-            }
+            var span = learn.GetMoveRange(evo.LevelMax);
+            foreach (var move in span)
+                result[move] = true;
         }
 
         if (types.HasFlag(MoveSourceType.Machine))
@@ -126,8 +122,8 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
         }
     }
 
-    internal static readonly ushort[] TMHM_AO =
-    {
+    internal static ReadOnlySpan<ushort> TMHM_AO =>
+    [
         468, 337, 473, 347, 046, 092, 258, 339, 474, 237,
         241, 269, 058, 059, 063, 113, 182, 240, 355, 219,
         218, 076, 479, 085, 087, 089, 216, 091, 094, 247,
@@ -140,5 +136,5 @@ public sealed class LearnSource6AO : ILearnSource<PersonalInfo6AO>, IEggSource
         430, 433, 528, 290, 555, 267, 399, 612, 605, 590,
 
         15, 19, 57, 70, 127, 249, 291,
-    };
+    ];
 }

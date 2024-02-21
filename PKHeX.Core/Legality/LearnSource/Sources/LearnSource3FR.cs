@@ -2,19 +2,17 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using static PKHeX.Core.LearnMethod;
 using static PKHeX.Core.LearnEnvironment;
-using static PKHeX.Core.LearnSource3;
 
 namespace PKHeX.Core;
 
 /// <summary>
 /// Exposes information about how moves are learned in <see cref="FR"/>.
 /// </summary>
-public sealed class LearnSource3FR : ILearnSource<PersonalInfo3>, IEggSource
+public sealed class LearnSource3FR : LearnSource3, ILearnSource<PersonalInfo3>, IEggSource
 {
     public static readonly LearnSource3FR Instance = new();
     private static readonly PersonalTable3 Personal = PersonalTable.FR;
-    private static readonly Learnset[] Learnsets = Legal.LevelUpFR;
-    private static readonly EggMoves6[] EggMoves = Legal.EggMovesRS; // same for all Gen3 games
+    private static readonly Learnset[] Learnsets = LearnsetReader.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("lvlmove_fr.pkl"), "fr"u8));
     private const int MaxSpecies = Legal.MaxSpeciesID_3;
     private const LearnEnvironment Game = FR;
     private const int Generation = 3;
@@ -43,7 +41,7 @@ public sealed class LearnSource3FR : ILearnSource<PersonalInfo3>, IEggSource
     public ReadOnlySpan<ushort> GetEggMoves(ushort species, byte form)
     {
         if (species > MaxSpecies)
-            return ReadOnlySpan<ushort>.Empty;
+            return [];
         return EggMoves[species].Moves;
     }
 
@@ -81,7 +79,7 @@ public sealed class LearnSource3FR : ILearnSource<PersonalInfo3>, IEggSource
 
     private static bool GetIsTM(PersonalInfo3 info, ushort move)
     {
-        var index = Array.IndexOf(TM_3, move);
+        var index = TM_3.IndexOf(move);
         if (index == -1)
             return false;
         return info.TMHM[index];
@@ -89,7 +87,7 @@ public sealed class LearnSource3FR : ILearnSource<PersonalInfo3>, IEggSource
 
     private static bool GetIsHM(PersonalInfo3 info, ushort move)
     {
-        var index = Array.IndexOf(HM_3, move);
+        var index = HM_3.IndexOf(move);
         if (index == -1)
             return false;
         return info.TMHM[CountTM + index];
@@ -103,13 +101,9 @@ public sealed class LearnSource3FR : ILearnSource<PersonalInfo3>, IEggSource
         if (types.HasFlag(MoveSourceType.LevelUp))
         {
             var learn = GetLearnset(evo.Species, evo.Form);
-            (bool hasMoves, int start, int end) = learn.GetMoveRange(evo.LevelMax);
-            if (hasMoves)
-            {
-                var moves = learn.Moves;
-                for (int i = end; i >= start; i--)
-                    result[moves[i]] = true;
-            }
+            var span = learn.GetMoveRange(evo.LevelMax);
+            foreach (var move in span)
+                result[move] = true;
         }
 
         if (types.HasFlag(MoveSourceType.Machine))

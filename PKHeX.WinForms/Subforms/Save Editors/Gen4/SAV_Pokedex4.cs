@@ -12,11 +12,11 @@ public partial class SAV_Pokedex4 : Form
     private readonly SaveFile Origin;
     private readonly SAV4 SAV;
 
-    public SAV_Pokedex4(SaveFile sav)
+    public SAV_Pokedex4(SAV4 sav)
     {
         InitializeComponent();
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
-        CL = new[] { CHK_L1, CHK_L2, CHK_L3, CHK_L5, CHK_L4, CHK_L6 }; // JPN,ENG,FRA,GER,ITA,SPA
+        CL = [CHK_L1, CHK_L2, CHK_L3, CHK_L5, CHK_L4, CHK_L6]; // JPN,ENG,FRA,GER,ITA,SPA
         SAV = (SAV4)(Origin = sav).Clone();
 
         editing = true;
@@ -35,7 +35,7 @@ public partial class SAV_Pokedex4 : Form
         editing = false;
         LB_Species.SelectedIndex = 0;
 
-        string[] dexMode = { "not given", "simple mode", "detect forms", "national dex", "other languages" };
+        string[] dexMode = ["not given", "simple mode", "detect forms", "national dex", "other languages"];
         if (SAV is SAV4HGSS) dexMode = dexMode.Where((_, i) => i != 2).ToArray();
         foreach (string mode in dexMode)
             CB_DexUpgraded.Items.Add(mode);
@@ -287,8 +287,7 @@ public partial class SAV_Pokedex4 : Form
         }
 
         var item = lb.SelectedItem;
-        if (item is null)
-            throw new NullReferenceException();
+        ArgumentNullException.ThrowIfNull(item);
         lb.Items.RemoveAt(lb.SelectedIndex);
         var dest = lb == LB_Gender ? LB_NGender : LB_Gender;
         dest.Items.Add(item);
@@ -319,8 +318,7 @@ public partial class SAV_Pokedex4 : Form
             return;
 
         var item = lb.SelectedItem;
-        if (item is null)
-            throw new NullReferenceException();
+        ArgumentNullException.ThrowIfNull(item);
         lb.Items.Remove(item);
         lb.Items.Insert(newIndex, item);
         lb.SelectedIndex = newIndex;
@@ -338,8 +336,7 @@ public partial class SAV_Pokedex4 : Form
         }
 
         var item = lb.SelectedItem;
-        if (item is null)
-            throw new NullReferenceException();
+        ArgumentNullException.ThrowIfNull(item);
         lb.Items.RemoveAt(lb.SelectedIndex);
         var dest = lb == LB_Form ? LB_NForm : LB_Form;
         dest.Items.Add(item);
@@ -370,8 +367,7 @@ public partial class SAV_Pokedex4 : Form
             return;
 
         var item = lb.SelectedItem;
-        if (item is null)
-            throw new NullReferenceException();
+        ArgumentNullException.ThrowIfNull(item);
         lb.Items.Remove(item);
         lb.Items.Insert(newIndex, item);
         lb.SelectedIndex = newIndex;

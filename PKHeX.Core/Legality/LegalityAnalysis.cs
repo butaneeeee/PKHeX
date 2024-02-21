@@ -140,7 +140,7 @@ public sealed class LegalityAnalysis
         if (info.EncounterOriginal is not EncounterInvalid enc)
             return false;
         if (enc.Generation <= 3)
-            return true;
+            return pk.Format <= 3;
         if (!pk.FatefulEncounter)
             return false;
         if (enc.Generation < 6)
@@ -189,7 +189,7 @@ public sealed class LegalityAnalysis
         Nickname.Verify(this);
         Level.Verify(this);
         Level.VerifyG1(this);
-        Trainer.VerifyOTG1(this);
+        Trainer.VerifyOTGB(this);
         MiscValues.VerifyMiscG1(this);
         if (Entity.Format == 2)
             Item.Verify(this);
@@ -223,7 +223,6 @@ public sealed class LegalityAnalysis
     private void ParsePK5()
     {
         UpdateChecks();
-        NHarmonia.Verify(this);
         if (Entity.Format >= 8)
             Transfer.VerifyTransferLegalityG8(this);
     }
@@ -264,7 +263,7 @@ public sealed class LegalityAnalysis
     /// <param name="s">Check severity</param>
     /// <param name="c">Check comment</param>
     /// <param name="i">Check type</param>
-    internal void AddLine(Severity s, string c, CheckIdentifier i) => AddLine(new CheckResult(s, c, i));
+    internal void AddLine(Severity s, string c, CheckIdentifier i) => AddLine(new CheckResult(s, i, c));
 
     /// <summary>
     /// Adds a new Check parse value.

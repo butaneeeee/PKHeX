@@ -103,45 +103,16 @@ public static class Locations
     /// <summary> Generation 8 Gift from Pokémon HOME </summary>
     public const ushort HOME8 = 30018;
 
-    public const ushort HOME_SHSP = 59998; // SP traded to (SW)SH
-    public const ushort HOME_SWBD = 59999; // BD traded to SW(SH)
-    public const ushort HOME_SWLA = 60000; // PLA traded to SW(SH)
-    public const ushort HOME_SWSHBDSPEgg = 65534; // -2 = 8bNone-1..
+    /// <summary> Generation 8 BD/SP Magic location for "None" since 0 is an actual met location. </summary>
     public const ushort Default8bNone = 65535;
 
-    public static int GetVersionSWSH(int ver) => (GameVersion)ver switch
-    {
-        GameVersion.PLA => (int)GameVersion.SW,
-        GameVersion.BD => (int)GameVersion.SW,
-        GameVersion.SP => (int)GameVersion.SH,
-        _ => ver,
-    };
-
-    public static ushort GetMetSWSH(ushort loc, int ver) => (GameVersion)ver switch
-    {
-        GameVersion.PLA => HOME_SWLA,
-        GameVersion.BD => HOME_SWBD,
-        GameVersion.SP => HOME_SHSP,
-        _ => loc,
-    };
-
-    public static bool IsValidMetBDSP(ushort loc, int ver) => loc switch
-    {
-        HOME_SHSP when ver == (int)GameVersion.SH => true,
-        HOME_SWBD when ver == (int)GameVersion.SW => true,
-        _ => false,
-    };
-
-    public static int TradedEggLocationNPC(int generation) => generation switch
-    {
-        1 => LinkTrade2NPC,
-        2 => LinkTrade2NPC,
-        3 => LinkTrade3NPC,
-        4 => LinkTrade4NPC,
-        5 => LinkTrade5NPC,
-        _ => LinkTrade6NPC,
-    };
-
+    /// <summary>
+    /// Gets the egg location value for a traded unhatched egg.
+    /// </summary>
+    /// <param name="generation">Generation of the egg</param>
+    /// <param name="ver">Game version of the egg</param>
+    /// <returns>Egg Location value</returns>
+    /// <remarks>Location will be set to the Met Location until it hatches, then moves to Egg Location.</remarks>
     public static int TradedEggLocation(int generation, GameVersion ver) => generation switch
     {
         4 => LinkTrade4,
@@ -158,11 +129,7 @@ public static class Locations
 
     private const int SafariLocation_RSE = 57;
     private const int SafariLocation_FRLG = 136;
-    private const int SafariLocation_HGSS = 202;
-    private const int MarshLocation_DPPt = 52;
-    public static bool IsSafariZoneLocation3(int loc) => loc is SafariLocation_RSE or SafariLocation_FRLG;
-    public static bool IsSafariZoneLocation4(int loc) => loc is MarshLocation_DPPt or SafariLocation_HGSS;
-    public static bool IsSafariZoneLocation8b(int loc) => loc is (>= 219 and <= 224);
+    public static bool IsSafariZoneLocation3(byte loc) => loc is SafariLocation_RSE or SafariLocation_FRLG;
 
     public static bool IsEggLocationBred4(int loc, GameVersion ver)
     {
@@ -198,8 +165,8 @@ public static class Locations
     public static bool IsMetLocation7SM(ushort z) => z < 200; // Outer Cape
     public static bool IsMetLocation7USUM(ushort z) => z < 234; // Dividing Peak Tunnel
     public static bool IsMetLocation7GG(ushort z) => z <= 54; // Pokémon League
-    public static bool IsMetLocation8SWSH(ushort z) => z <= 246; // at the Crown Tundra Station
+    public static bool IsMetLocation8SWSH(ushort z) => z <= 246; // Crown Tundra Station
     public static bool IsMetLocation8BDSP(ushort z) => z <= 657; // Ramanas Park (Genome Room)
     public static bool IsMetLocation8LA(ushort z) => z <= 155; // Training Grounds
-    public static bool IsMetLocation9SV(ushort z) => z <= 131; // Uva Academy
+    public static bool IsMetLocation9SV(ushort z) => z <= 200; // Terarium (Entry Tunnel)
 }

@@ -94,7 +94,7 @@ public sealed class SK2 : GBPKM, ICaughtData2
     public override string Nickname
     {
         get => StringConverter12.GetString(Nickname_Trash, Japanese);
-        set => StringConverter12.SetString(Nickname_Trash, value, 12, Japanese, StringConverterOption.None);
+        set => StringConverter12.SetString(Nickname_Trash, value, StringLength, Japanese, StringConverterOption.None);
     }
 
     public override string OT_Name
@@ -111,8 +111,8 @@ public sealed class SK2 : GBPKM, ICaughtData2
         }
     }
 
-    public override Span<byte> Nickname_Trash => Data.AsSpan(0x24, 12);
-    public override Span<byte> OT_Trash => Data.AsSpan(0x30, 12);
+    public override Span<byte> Nickname_Trash => Data.AsSpan(0x24, StringLength);
+    public override Span<byte> OT_Trash => Data.AsSpan(0x30, StringLength);
 
     #endregion
 
@@ -131,20 +131,13 @@ public sealed class SK2 : GBPKM, ICaughtData2
     public override bool HasOriginalMetLocation => CaughtData != 0;
     public override int Version { get => (int)GameVersion.GSC; set { } }
 
-    protected override byte[] GetNonNickname(int language)
+    protected override void GetNonNickname(int language, Span<byte> data)
     {
         var name = SpeciesName.GetSpeciesNameGeneration(Species, language, 2);
-        byte[] data = new byte[name.Length];
         StringConverter12.SetString(data, name, data.Length, Japanese, StringConverterOption.Clear50);
-        return data;
     }
 
-    public override void SetNotNicknamed(int language)
-    {
-        var name = SpeciesName.GetSpeciesNameGeneration(Species, language, 2);
-        Nickname_Trash.Clear();
-        Nickname = name;
-    }
+    public override void SetNotNicknamed(int language) => GetNonNickname(language, Nickname_Trash);
 
     // Maximums
     public override ushort MaxMoveID => Legal.MaxMoveID_2;
@@ -190,18 +183,21 @@ public sealed class SK2 : GBPKM, ICaughtData2
 
     private static bool IsJapanese(ReadOnlySpan<byte> data)
     {
-        if (!StringConverter12.GetIsG1Japanese(data.Slice(0x30, StringLength)))
+        const byte empty = 0;
+        const byte terminator = StringConverter12.G1TerminatorCode;
+
+        var ot = data.Slice(0x30, StringLength);
+        if (ot[6..].ContainsAnyExcept(empty, terminator))
             return false;
-        if (!StringConverter12.GetIsG1Japanese(data.Slice(0x24, StringLength)))
+        if (!StringConverter12.GetIsG1Japanese(ot))
             return false;
 
-        for (int i = 6; i < 0xC; i++)
-        {
-            if (data[0x30 + i] is not (0 or StringConverter12.G1TerminatorCode))
-                return false;
-            if (data[0x24 + i] is not (0 or StringConverter12.G1TerminatorCode))
-                return false;
-        }
+        var nick = data.Slice(0x24, StringLength);
+        if (nick[6..].ContainsAnyExcept(empty, terminator))
+            return false;
+        if (!StringConverter12.GetIsG1Japanese(nick))
+            return false;
+
         return true;
     }
 
